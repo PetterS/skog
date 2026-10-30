@@ -49,13 +49,14 @@ def open_game(browser, width, height, touch=False):
         })()""")
         errors, requests = [], []
         page.on("pageerror", lambda error: errors.append(str(error)))
-        page.on("console", lambda message: errors.append(message.text) if message.type == "error" else None)
+        page.on("console", lambda message: errors.append(message.text) if (message.type == "error" or "GL_INVALID_" in message.text or "WebGL: INVALID_" in message.text) and message.text not in errors else None)
         page.on("request", lambda req: requests.append(req.url) if req.url.startswith("http") else None)
-        page.goto(URL)
+        page.goto(URL, wait_until="domcontentloaded")
         page.wait_for_function("window.Skog && Skog.state.frames>3")
         page.evaluate("async()=>{if(Skog.forest.environment)await Skog.forest.environment.assetsReady;}")
         return page, cdp, errors, requests
     except BaseException:
+        if "errors" in locals() and errors: print("Browser errors:",[e[:2500] for e in errors[:3]],flush=True)
         control.send("Target.closeTarget", {"targetId": target})
         raise
     finally:
@@ -189,11 +190,17 @@ def layout(browser, width, height, is_touch):
         assert not errors, errors
         assert not requests, requests
         stats = page.evaluate("Skog.forest.renderer.info.render")
-        # Smooth nearby geometry costs more triangles; spatial batches keep the
-        # view bounded, while indexed buffers bound memory independently.
-        assert stats["triangles"] < 850000, stats
-        assert stats["calls"] < 320, stats
-        assert page.evaluate("Skog.forest.renderer.getContext().getError()") == 0
+        detail=page.evaluate("Skog.forest.pipeline.detailStats")
+        shadow=page.evaluate("Skog.forest.pipeline.shadowStats")
+        # Preserve the main-view budget; the cropped supersampling pass reuses
+        # geometry and has separate draw, triangle and framebuffer limits.
+        assert stats["triangles"]-detail["triangles"]-shadow["triangles"] < 850000, (stats,detail,shadow)
+        assert stats["calls"]-detail["calls"]-shadow["calls"] < 320, (stats,detail,shadow)
+        assert detail["triangles"] < 500000 and detail["calls"] < 180, detail
+        assert detail["pixels"] <= 1350000, detail
+        assert shadow["triangles"]<1800000 and shadow["calls"]<400,shadow
+        gl_error=page.evaluate("Skog.forest.renderer.getContext().getError()")
+        assert gl_error == 0,gl_error
         print(f"PASS {width}×{height}: offline, layout, {'native multitouch' if is_touch else 'keyboard/mouse'}, pause, audio; {stats['calls']} draws / {stats['triangles']} triangles", flush=True)
     finally:
         page.close()
@@ -278,6 +285,227 @@ def polish(browser):
         page.close()
 
 
+def character_review(browser):
+    page, cdp, errors, requests = open_game(browser, 1440, 900)
+    try:
+        page.locator("#enter").click()
+        page.wait_for_function("Skog.forest.character.eyeMap.image?.width>0")
+        page.evaluate("Skog.state.paused=true;document.querySelector('#hint').classList.add('faded')")
+        for name, speed, phase in [("idle",0,0),("walk",1.85,1.0),("run",3.5,2.0)]:
+            page.evaluate("""([speed,phase])=>{
+              const s=Skog,c=s.forest.character;
+              Object.assign(s.player,{speed,motionSpeed:speed,walk:phase});
+              Object.assign(s.camera,{distance:3.3,pitch:.13,yaw:Math.PI,actualDistance:3.3});
+              for(let i=0;i<100;i++)s.forest.update(4,1/60,s.player,s.camera);
+            }""", [speed,phase])
+            page.screenshot(path=f"/tmp/skog-quaternius-{name}.png")
+        page.evaluate("""()=>{const s=Skog;Object.assign(s.player,{speed:0,motionSpeed:0});
+          Object.assign(s.camera,{distance:6.6,yaw:.08,actualDistance:6.6});
+          for(let i=0;i<100;i++)s.forest.update(4,1/60,s.player,s.camera);
+        }""")
+        page.screenshot(path="/tmp/skog-lantern-on.png")
+        page.locator("#lantern").click()
+        page.evaluate("for(let i=0;i<120;i++)Skog.forest.update(4,1/60,Skog.player,Skog.camera)")
+        assert page.evaluate("!Skog.forest.character.flame.visible && Skog.forest.lanternLight.intensity<.01")
+        page.screenshot(path="/tmp/skog-lantern-off.png")
+        assert not errors and not requests, (errors,requests)
+        print("PASS Quaternius eye texture, idle/walk/run snapshots, lantern on/off, offline",flush=True)
+    finally:
+        page.close()
+
+
+def aliasing_review(browser):
+    for width,height,touch_mode in [(1440,900,False),(390,844,True)]:
+        page, cdp, errors, requests = open_game(browser,width,height,touch_mode)
+        try:
+            page.locator("#enter").click()
+            page.evaluate("""()=>{const s=Skog;s.state.paused=true;
+              document.querySelector('#hint').hidden=true;
+              s.forest.setQuality(1);
+              Object.assign(s.camera,{distance:3.3,pitch:.13,yaw:0,actualDistance:3.3});
+              for(let i=0;i<100;i++)s.forest.update(4,1/60,s.player,s.camera);
+            }""")
+            metrics={}
+            for enabled in [False,True]:
+                metrics[enabled]=page.evaluate("""enabled=>{
+                  const f=Skog.forest,p=f.pipeline,r=f.renderer,gl=r.getContext();
+                  p.antialiasEnabled=enabled;p.sceneTarget.samples=Math.min(enabled?4:2,r.capabilities.maxSamples);
+                  p.sceneTarget.dispose();
+                  const timings=[];
+                  for(let i=0;i<40;i++){const begin=performance.now();p.render(4);gl.finish();if(i>=10)timings.push(performance.now()-begin);}
+                  p.render(4);
+                  const w=gl.drawingBufferWidth,h=gl.drawingBufferHeight,size=120,pack=f.character.pack.getWorldPosition(new THREE.Vector3()).project(f.camera),x=Math.floor((pack.x*.5+.5)*w-size/2),y=Math.floor((pack.y*.5+.5)*h-size/2);
+                  const rgba=new Uint8Array(size*size*4);gl.readPixels(x,y,size,size,gl.RGBA,gl.UNSIGNED_BYTE,rgba);
+                  let energy=0,mean=0;const luma=i=>rgba[i*4]*.2126+rgba[i*4+1]*.7152+rgba[i*4+2]*.0722;
+                  for(let yy=1;yy<size-1;yy++)for(let xx=1;xx<size-1;xx++){
+                    const i=yy*size+xx,l=luma(i);mean+=l;
+                    energy+=Math.abs(4*l-luma(i-1)-luma(i+1)-luma(i-size)-luma(i+size));
+                  }
+                  timings.sort((a,b)=>a-b);
+                  return {energy,mean,medianMs:timings[15],samples:p.sceneTarget.samples,calls:p.stats.calls,error:gl.getError()};
+                }""",enabled)
+                page.evaluate("window.aaReviewTimer=setInterval(()=>Skog.forest.pipeline.render(4),30)")
+                page.screenshot(path=f"/tmp/skog-aa-{width}-{'after' if enabled else 'before'}.png")
+                page.evaluate("clearInterval(window.aaReviewTimer)")
+            assert metrics[True]["energy"] < metrics[False]["energy"],metrics
+            assert abs(metrics[True]["mean"]/metrics[False]["mean"]-1)<.08,metrics
+            assert metrics[True]["error"] == 0 and not errors and not requests,(metrics,errors,requests)
+            print(f"PASS antialias {width}x{height}: {metrics}",flush=True)
+        finally:
+            page.close()
+
+
+def temporal_review(browser):
+    import base64
+    for width,height in [(1440,900),(390,844)]:
+        page,cdp,errors,requests=open_game(browser,width,height,width<600)
+        try:
+            page.evaluate("Skog.state.paused=true;Skog.forest.setQuality(1)")
+            result={}
+            for enabled in [False,True]:
+                trial=page.evaluate("""enabled=>{
+                  const s=Skog,f=s.forest,p=f.pipeline,gl=f.renderer.getContext();
+                  p.temporalEnabled=enabled;p.historyValid=false;
+                  const projection=f.camera.projectionMatrix.clone(),frames=[],images=[],timings=[];
+                  const size=80,data=new Uint8Array(size*size*4);
+                  for(let i=0;i<180;i++){
+                    const begin=performance.now();f.update(i/60,1/60,s.player,s.camera);gl.finish();
+                    if(i>=60){
+                      timings.push(performance.now()-begin);
+                      const pack=f.character.pack.getWorldPosition(new THREE.Vector3()).project(f.camera);
+                      const x=Math.floor((pack.x*.5+.5)*gl.drawingBufferWidth-size/2),y=Math.floor((pack.y*.5+.5)*gl.drawingBufferHeight-size/2);
+                      gl.readPixels(x,y,size,size,gl.RGBA,gl.UNSIGNED_BYTE,data);
+                      frames.push(Float32Array.from({length:size*size},(_,j)=>data[j*4]*.2126+data[j*4+1]*.7152+data[j*4+2]*.0722));
+                    }
+                    if([60,90,120,150].includes(i))images.push(f.renderer.domElement.toDataURL('image/png').split(',')[1]);
+                  }
+                  let flicker=0,mean=0;
+                  for(let i=2;i<frames.length;i++)for(let j=0;j<frames[i].length;j++){
+                    flicker+=Math.abs(frames[i][j]-2*frames[i-1][j]+frames[i-2][j]);mean+=frames[i][j];
+                  }
+                  const count=(frames.length-2)*size*size;timings.sort((a,b)=>a-b);
+                  return {flicker:flicker/count,mean:mean/count,medianMs:timings[Math.floor(timings.length/2)],
+                    projectionStable:projection.equals(f.camera.projectionMatrix),error:gl.getError(),images};
+                }""",enabled)
+                for i,data in enumerate(trial.pop("images")):
+                    Path(f"/tmp/skog-temporal-{width}-{'after' if enabled else 'before'}-{i}.png").write_bytes(base64.b64decode(data))
+                result[enabled]=trial
+            print(f"Temporal title {width}x{height}: {result}",flush=True)
+            assert result[True]["flicker"]<result[False]["flicker"]*.7,result
+            assert abs(result[True]["mean"]/result[False]["mean"]-1)<.05,result
+            assert result[True]["projectionStable"] and result[True]["error"]==0,result
+            # Camera cuts and pixel-ratio changes discard history immediately.
+            page.evaluate("Skog.forest.setQuality(.8)")
+            assert page.evaluate("!Skog.forest.pipeline.historyValid")
+            page.evaluate("Skog.camera.yaw+=1;Skog.forest.update(4,1/60,Skog.player,Skog.camera)")
+            assert page.evaluate("Skog.forest.pipeline.temporal.uniforms.historyWeight.value===0")
+            page.evaluate("Skog.forest.update(4+1/60,1/60,Skog.player,Skog.camera)")
+            assert page.evaluate("Skog.forest.pipeline.temporal.uniforms.historyWeight.value>0")
+            page.evaluate("Skog.camera.yaw-=1;Skog.forest.update(4+2/60,1/60,Skog.player,Skog.camera)")
+            assert page.evaluate("Skog.forest.pipeline.temporal.uniforms.historyWeight.value===0")
+            motion=page.evaluate("""()=>{
+              const s=Skog,f=s.forest,p=f.pipeline,images={},coverage=[];
+              f.setQuality(1);s.camera.distance=3.3;s.camera.actualDistance=3.3;
+              for(let i=0;i<180;i++){
+                const speed=i<60?1.85:3.5;
+                s.player.speed=s.player.motionSpeed=speed;s.player.walk+=speed/60*3.5;
+                s.player.z-=speed/60;
+                if(i>=120)s.camera.yaw+=.012;
+                f.update(5+i/60,1/60,s.player,s.camera);
+                if([30,90,145,146,147].includes(i)){
+                  images[i]=f.renderer.domElement.toDataURL('image/png').split(',')[1];
+                  let clipped=0;const q=new THREE.Vector3(),rect=p.detailRect;
+                  f.character.group.traverse(o=>{
+                    if(!o.isMesh||o.material.transparent)return;
+                    for(let v=0;v<o.geometry.attributes.position.count;v++){
+                      o.getVertexPosition(v,q).applyMatrix4(o.matrixWorld).project(f.camera);
+                      const x=q.x*.5+.5,y=q.y*.5+.5;
+                      if(x<rect.x||x>rect.x+rect.z||y<rect.y||y>rect.y+rect.w)clipped++;
+                    }
+                  });
+                  coverage.push({frame:i,clipped,pixels:p.detailStats.pixels});
+                }
+              }
+              return {images,coverage,weight:p.temporal.uniforms.historyWeight.value,error:f.renderer.getContext().getError()};
+            }""")
+            for frame,data in motion.pop("images").items():
+                Path(f"/tmp/skog-temporal-{width}-motion-{frame}.png").write_bytes(base64.b64decode(data))
+            assert 0<motion["weight"]<.7 and motion["error"]==0,motion
+            assert all(c["clipped"]==0 and 0<c["pixels"]<=1350000 for c in motion["coverage"]),motion
+            assert page.evaluate("Skog.forest.renderer.getContext().getError()===0")
+            assert not errors and not requests,(errors,requests)
+        finally:page.close()
+
+
+def backpack_review(browser):
+    page,cdp,errors,requests=open_game(browser,1440,900)
+    try:
+        # Native screenshot crops: inspect actual title animation, without rescaling.
+        for i in range(4):
+            page.wait_for_timeout(170)
+            page.screenshot(path=f"/tmp/skog-backpack-live-{i}.png",clip={"x":650,"y":380,"width":150,"height":220})
+        page.evaluate("Skog.state.paused=true;Skog.camera.distance=3.3;Skog.camera.actualDistance=3.3")
+        modes=["baseline","ss2","ss3"] if "--supersample" in sys.argv else ["baseline","no-shadow","no-ao","direct","matte","flat","lantern-only","fill-only","sky-only"]
+        for mode in modes:
+            page.evaluate("""mode=>{
+              const f=Skog.forest,c=f.character,p=f.pipeline;
+              if(window.restoreBackpack)window.restoreBackpack();
+              f.setQuality(1);
+              const items=[];c.group.traverse(o=>{if(o.isMesh)items.push([o,o.material,o.receiveShadow]);});
+              const hemi=f.scene.children.find(o=>o.isHemisphereLight);
+              const lights=[c.lanternLight,f.characterFill,f.moonlight,hemi].map(o=>[o,o.intensity]);
+              const ao=p.ao.fragmentShader;
+              window.restoreBackpack=()=>{
+                for(const [o,material,receiveShadow] of items){o.material=material;o.receiveShadow=receiveShadow;}
+                for(const [o,intensity] of lights)o.intensity=intensity;
+                p.enabled=true;p.ao.fragmentShader=ao;p.ao.needsUpdate=true;
+              };
+              for(let i=0;i<60;i++)f.update(4,1/60,Skog.player,Skog.camera);
+              if(mode==='no-shadow')for(const [o] of items)o.receiveShadow=false;
+              if(mode==='no-ao'){p.ao.fragmentShader=ao.replace('gl_FragColor=vec4(vec3(shade),1.0);','gl_FragColor=vec4(1.0);');p.ao.needsUpdate=true;}
+              if(mode==='direct')p.enabled=false;
+              if(mode==='matte')for(const [o,m] of items){const mat=m.clone();mat.normalMap=null;mat.metalness=0;mat.roughness=1;o.material=mat;}
+              if(mode==='flat')for(const [o,m] of items)o.material=new THREE.MeshBasicMaterial({color:m.color});
+              if(mode==='lantern-only')for(const [o] of lights)if(o!==c.lanternLight)o.intensity=0;
+              if(mode==='fill-only')for(const [o] of lights)if(o!==f.characterFill)o.intensity=0;
+              if(mode==='sky-only'){c.lanternLight.intensity=0;f.characterFill.intensity=0;}
+              if(mode==='ss2')f.setQuality(2);
+              if(mode==='ss3')f.setQuality(3);
+              p.historyValid=false;
+              window.backpackTimer=setInterval(()=>p.render(4),30);
+            }""",mode)
+            page.wait_for_timeout(350)
+            page.screenshot(path=f"/tmp/skog-backpack-{mode}.png",clip={"x":600,"y":300,"width":250,"height":440})
+            page.evaluate("clearInterval(window.backpackTimer)")
+        assert not errors and not requests,(errors,requests)
+        print("Backpack title frames and diagnostic lighting/material captures saved",flush=True)
+    finally:page.close()
+
+
+def detail_review(browser):
+    for width,height,quality in [(1440,900,1),(1440,900,1.6),(390,844,1)]:
+        page,cdp,errors,requests=open_game(browser,width,height,width<600)
+        try:
+            page.evaluate("quality=>Skog.forest.setQuality(quality)",quality)
+            clip={"x":width/2-75,"y":height/2-70,"width":150,"height":220}
+            for enabled in [False,True]:
+                page.evaluate("""enabled=>{Skog.state.time=0;Skog.forest.pipeline.detailEnabled=enabled;
+                  Skog.forest.pipeline.historyValid=false;}""",enabled)
+                page.wait_for_timeout(450)
+                for i in range(4):
+                    page.wait_for_timeout(170)
+                    page.screenshot(path=f"/tmp/skog-detail-{width}-{quality}-{'on' if enabled else 'off'}-{i}.png",clip=clip)
+                info=page.evaluate("""()=>{const p=Skog.forest.pipeline;return {rect:p.detailRect.toArray(),
+                  samplePixels:p.detailTarget.width*p.detailTarget.height,samples:p.composite.uniforms.detailSamples.value,
+                  draws:p.stats.calls,triangles:p.stats.triangles,viewRestored:Skog.forest.camera.view===null,
+                  error:Skog.forest.renderer.getContext().getError()};}""")
+                assert info["viewRestored"] and info["error"]==0,info
+                if enabled:assert info["rect"][2]>0 and info["samplePixels"]<=1350000,info
+                print(f"Detail {width} @ {quality}, enabled={enabled}: {info}",flush=True)
+            assert not errors and not requests,(errors,requests)
+        finally:page.close()
+
+
 def benchmark(browser):
     page, cdp, errors, requests = open_game(browser, 1440, 900)
     try:
@@ -304,6 +532,61 @@ def benchmark(browser):
         page.close()
 
 
+def occlusion_review(browser):
+    import base64
+    for width,height in [(1440,900),(390,844)]:
+        page,cdp,errors,requests=open_game(browser,width,height,width<600)
+        try:
+            page.evaluate("""()=>{const s=Skog;s.state.paused=true;s.forest.setQuality(1);
+              Object.assign(s.camera,{distance:3.3,actualDistance:3.3,pitch:.13});
+              for(let i=0;i<90;i++)s.forest.update(4,1/60,s.player,s.camera);
+            }""")
+            result=page.evaluate("""()=>{
+              const s=Skog,f=s.forest,p=f.pipeline,light=f.lanternLight,gl=f.renderer.getContext();
+              const original=light.position.clone(),power=light.intensity,result={};
+              const pack=f.character.pack.getWorldPosition(new THREE.Vector3()).project(f.camera);
+              const ground=new THREE.Vector3(original.x+.45,SkogWorld.height(original.x+.45,original.z)+.02,original.z).project(f.camera);
+              function pixels(point,w,h){
+                const x=Math.floor((point.x*.5+.5)*gl.drawingBufferWidth-w/2),y=Math.floor((point.y*.5+.5)*gl.drawingBufferHeight-h/2);
+                const data=new Uint8Array(w*h*4);gl.readPixels(x,y,w,h,gl.RGBA,gl.UNSIGNED_BYTE,data);
+                return Array.from({length:w*h},(_,i)=>data[i*4]*.2126+data[i*4+1]*.7152+data[i*4+2]*.0722);
+              }
+              for(const mode of ['leak','shadow','off','rear']){
+                light.position.copy(original);light.intensity=mode==='off'?0:power;
+                light.castShadow=mode!=='leak';
+                if(mode==='rear')light.position.set(0,.9,-1.2).applyMatrix4(f.child.matrixWorld);
+                p.historyValid=false;const timing=[];
+                for(let i=0;i<24;i++){const start=performance.now();p.render(4);gl.finish();if(i>=8)timing.push(performance.now()-start);}
+                timing.sort((a,b)=>a-b);
+                result[mode]={pack:pixels(pack,80,100),ground:pixels(ground,16,16),medianMs:timing[8],
+                  calls:p.stats.calls,triangles:p.stats.triangles,shadow:{...p.shadowStats},
+                  image:f.renderer.domElement.toDataURL('image/png').split(',')[1]};
+              }
+              light.position.copy(original);light.intensity=power;light.castShadow=true;
+              return result;
+            }""")
+            for mode,trial in result.items():
+                Path(f"/tmp/skog-occlusion-{width}-{mode}.png").write_bytes(base64.b64decode(trial.pop("image")))
+            def contribution(mode):
+                return sum(max(0,a-b) for a,b in zip(result[mode]["pack"],result["off"]["pack"]))/len(result[mode]["pack"])
+            light_leak,blocked,rear=map(contribution,["leak","shadow","rear"])
+            ground_on=sum(result["shadow"]["ground"])/256
+            ground_off=sum(result["off"]["ground"])/256
+            for trial in result.values():
+                trial.pop("pack");trial.pop("ground")
+            print(f"Occlusion {width}: pack contribution unshadowed={light_leak:.2f}, shadowed={blocked:.2f}, rear source={rear:.2f}; ground on/off={ground_on:.2f}/{ground_off:.2f}; {result}",flush=True)
+            assert blocked<light_leak*.4,(light_leak,blocked)
+            assert rear>blocked+10,(rear,blocked)
+            assert ground_on>ground_off+20,(ground_on,ground_off)
+            page.evaluate("Skog.forest.character.setLantern(false);for(let i=0;i<120;i++)Skog.forest.update(4,1/60,Skog.player,Skog.camera)")
+            assert page.evaluate("!Skog.forest.lanternLight.shadow.autoUpdate && Skog.forest.pipeline.shadowStats.calls===0")
+            page.evaluate("Skog.forest.character.setLantern(true);for(let i=0;i<60;i++)Skog.forest.update(4,1/60,Skog.player,Skog.camera)")
+            assert page.evaluate("Skog.forest.lanternLight.shadow.autoUpdate && Skog.forest.pipeline.shadowStats.calls>0")
+            assert page.evaluate("Skog.forest.renderer.getContext().getError()===0")
+            assert not errors and not requests,(errors,requests)
+        finally:page.close()
+
+
 if __name__ == "__main__":
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp("http://127.0.0.1:9222")
@@ -315,6 +598,27 @@ if __name__ == "__main__":
             finally:
                 page.evaluate("testSound?.release()")
                 page.close()
+            sys.exit(0)
+        if "--temporal" in sys.argv:
+            temporal_review(browser)
+            sys.exit(0)
+        if "--backpack" in sys.argv:
+            backpack_review(browser)
+            sys.exit(0)
+        if "--detail" in sys.argv:
+            detail_review(browser)
+            sys.exit(0)
+        if "--occlusion" in sys.argv:
+            occlusion_review(browser)
+            sys.exit(0)
+        if "--layout" in sys.argv:
+            layout(browser,1440,900,False)
+            sys.exit(0)
+        if "--aliasing" in sys.argv:
+            aliasing_review(browser)
+            sys.exit(0)
+        if "--character" in sys.argv:
+            character_review(browser)
             sys.exit(0)
         if "--polish" in sys.argv:
             polish(browser)

@@ -1,0 +1,55 @@
+Character assets for Skog — downloaded 2026-10-30
+
+AUTHOR: Quaternius (https://quaternius.com)
+LICENSE: CC0 1.0 Universal; see Quaternius.LICENSE.txt.
+
+1. Universal Base Characters, Standard (free)
+https://quaternius.com/packs/universalbasecharacters.html
+https://quaternius.itch.io/universal-base-characters
+Downloaded archive SHA-256:
+fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40
+
+The actual free archive contains Superhero Male/Female, NOT the teen models
+shown in the pack overview. The teen bodies are in the paid Source edition.
+Skog uses the male head, eyes and eyebrows with a shortened lower face,
+rounder proportions and enlarged cranium. Hair, hat, body, coat, backpack,
+hands, boots and lantern remain Skog's original geometry. This is an adapted
+hybrid character, not the paid Quaternius teen model.
+
+source-base.gltf and Superhero_Male_FullBody.bin retain the original geometry,
+rig and material metadata used by the extractor. The unused full-body/hair
+textures are not included; this source is not a self-contained textured model.
+T_Eye_Brown.png is the original eye texture, embedded unchanged at runtime.
+Skin uses Skog's material and subtle vertex colour; no body texture is shipped.
+
+2. Universal Animation Library, Standard (free)
+https://quaternius.com/packs/universalanimationlibrary.html
+https://quaternius.itch.io/universal-animation-library
+Downloaded archive SHA-256:
+cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724
+
+UAL1_Standard.glb.gz is the unmodified source GLB compressed with gzip.
+Selected clips: Idle_Loop, Walk_Loop, Jog_Fwd_Loop. The build script samples
+world-space limb directions and foot trajectories from the original rig.
+Skog retargets them to its smaller child, blends locomotion, constrains the
+lantern arm and applies terrain foot placement. Movement remains driven by
+player.walk (3.5 radians/metre), shared with the recorded footsteps.
+
+REBUILD (Bun, no download required):
+  bun scripts/build_character_assets.js
+
+quaternius-character.js is the generated runtime data. Original source files
+are only for editing/rebuilding and are never loaded by the game.
+
+Other sources investigated:
+- Blender Studio Snow: free CC-BY animation rig, requires conversion and
+  optimization from its Blender production rig.
+  https://studio.blender.org/characters/snow/v2/
+- Sunny, 3D Character Young Boy: CC-BY downloadable static model; the
+  description links to a separately offered rigged version.
+  https://sketchfab.com/3d-models/3d-character-young-boy-60dfa6ac87e84e7dae8dba220526946d
+- Plewr, 3D Rigged Character: CC0, but the visual is a simple mannequin.
+  https://plewr.itch.io/3d-rigged-character
+- Grab3D Teenager: listed at 751k triangles / 376k for the light version,
+  well above this game's character budget; not downloaded or adopted.
+  https://grab3d.com/models/characters/teen-character/

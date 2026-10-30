@@ -45,6 +45,7 @@
   }
   // A genuinely rounded box, with continuous corner normals and planar faces.
   function roundedBox(w,h,d,r=.025,segments=4) {
+    r=Math.min(r,w/2,h/2,d/2);
     const geo=new T.BoxGeometry(w,h,d,segments,segments,segments),p=geo.attributes.position,normals=geo.attributes.normal;
     const q=V(),n=V();
     for(let i=0;i<p.count;i++){
@@ -111,7 +112,24 @@
       this.buildTorso();this.buildHead();this.buildPack();this.buildLegs();this.buildArms();this.buildLantern(glowTexture);
       consolidate(this.body);
       this.lanternLight=new T.PointLight('#ffcc8c',20,26,1.1);scene.add(this.lanternLight);
-      this.lanternOn=true;this.lanternLevel=1;this.lightPosition=V();this.footA=V();this.footB=V();this.footRotation=new T.Quaternion();this.motion=0;this.turn=0;this.lastHeading=0;this.visible=true;
+      this.lanternLight.castShadow=true;
+      const shadow=this.lanternLight.shadow;
+      shadow.mapSize.set(512,512);shadow.camera.near=.03;shadow.camera.far=26;
+      shadow.bias=-.00002;shadow.normalBias=.0015;shadow.radius=1.5;
+      // The moon's forest shadow is cached. Character occlusion belongs to the
+      // moving lantern's distance map, not to that static directional map.
+      const noMoonShadow=new T.ShaderMaterial({
+        vertexShader:'void main(){gl_Position=vec4(2.0,2.0,2.0,1.0);}',
+        fragmentShader:'void main(){gl_FragColor=vec4(1.0);}',toneMapped:false,
+      });
+      this.group.traverse(o=>{
+        if(!o.isMesh||o.material.transparent)return;
+        o.castShadow=true;o.material.shadowSide=T.DoubleSide;o.customDepthMaterial=noMoonShadow;
+      });
+      // Tiny cage bars around the emitter would create unstable shadow stripes.
+      // The child, backpack and surrounding forest still occlude its light.
+      this.lantern.traverse(o=>{o.castShadow=false;});
+      this.lanternOn=true;this.lanternLevel=1;this.lightPosition=V();this.footA=V();this.footB=V();this.footRotation=new T.Quaternion();this.motion=0;this.runBlend=0;this.pose=new Float32Array(15);this.idlePose=new Float32Array(15);this.walkPose=new Float32Array(15);this.runPose=new Float32Array(15);this.turn=0;this.lastHeading=0;this.visible=true;
       this.group.updateMatrixWorld(true);
     }
     buildTorso(){
@@ -146,34 +164,17 @@
       const m=this.materials;this.neck=new T.Group();this.neck.position.set(0,1.10,0);this.body.add(this.neck);
       add(this.neck,new T.CylinderGeometry(.071,.078,.12,20),m.skinPlain,0,.027,0);
       this.head=new T.Group();this.head.position.set(0,.183,.005);this.neck.add(this.head);const h=this.head;
-      const geo=new T.SphereGeometry(1,32,24),p=geo.attributes.position,colors=[];const base=new T.Color('#ffffff'),blush=new T.Color('#dbb9aa');
-      for(let i=0;i<p.count;i++){
-        const nx=p.getX(i),ny=p.getY(i),nz=p.getZ(i),jaw=ny<-.2?1-(Math.abs(ny)-.2)*.18:1;
-        const cheek=Math.exp(-((Math.abs(nx)-.55)**2/.1+(ny+.17)**2/.2))*Math.max(0,nz);
-        const eyeSocket=Math.exp(-((Math.abs(nx)-.38)**2/.03+(ny-.16)**2/.04))*Math.max(0,nz);
-        p.setXYZ(i,nx*.165*jaw,ny*.195,nz*.152+cheek*.009-eyeSocket*.009);
-        const c=base.clone().lerp(blush,cheek*.38);colors.push(c.r,c.g,c.b);
-      }
-      geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.computeVertexNormals();add(h,geo,m.skin);
-      for(const s of [-1,1]){
-        ball(h,m.skinPlain,s*.163,-.009,-.005,.035,.052,.022);
-        ball(h,m.blush,s*.180,-.007,.007,.011,.027,.009);
-        ball(h,m.skinPlain,s*.177,-.024,.014,.012,.018,.012);
-        const eye=new T.Group();eye.position.set(s*.061,.03,.132);eye.rotation.y=s*.19;h.add(eye);
-        ball(eye,m.eye,0,0,0,.025,.0105,.010);
-        ball(eye,m.iris,0,.001,.009,.0098,.0088,.0035);
-        ball(eye,m.pupil,0,.001,.012,.0048,.0065,.0025);
-        ball(eye,m.glint,-.003,.004,.014,.0017,.0017,.001);
-        line(eye,m.skinPlain,[[-.027,-.001,.001],[-.018,.007,.009],[0,.011,.012],[.019,.007,.008],[.027,-.001,.001]],.005,20,6);
-        line(eye,m.skinPlain,[[-.025,-.003,.002],[-.012,-.009,.009],[.012,-.009,.008],[.025,-.003,.002]],.0035,16,6);
-        line(h,m.hair,[[s*.031,.082,.134],[s*.056,.088,.142],[s*.083,.082,.131],[s*.095,.073,.119]],.0055,16,6);
-        for(let i=0;i<4;i++)ball(h,m.blush,s*(.044+i*.012),-.022+(i%2)*.006,.150-i*.001,.0018,.0012,.001);
-      }
-      ball(h,m.skinPlain,0,-.005,.145,.019,.043,.022);
-      ball(h,m.skinPlain,0,-.035,.169,.024,.019,.023);
-      for(const s of [-1,1])ball(h,m.blush,s*.013,-.044,.181,.004,.002,.003);
-      line(h,m.lips,[[-.032,-.092,.129],[-.016,-.087,.14],[0,-.09,.145],[.016,-.088,.14],[.032,-.091,.129]],.0034,24,6);
-      line(h,m.skinPlain,[[-.023,-.098,.135],[0,-.102,.143],[.023,-.098,.135]],.0045,18,6);
+      // Artist-authored Quaternius face, reshaped for the child's shorter jaw
+      // and larger cranium. The forest outfit stays original to Skog.
+      const eyeMap=new T.TextureLoader().load(SkogCharacterAssets.eyes);eyeMap.colorSpace=T.SRGBColorSpace;eyeMap.flipY=false;this.eyeMap=eyeMap;
+      const faceMaterials=[m.hair,mat('#ffffff',{map:eyeMap,roughness:.42}),m.skin];
+      SkogCharacterAssets.meshes.forEach((data,i)=>{
+        const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(data.position,3));geo.setAttribute('uv',new T.Float32BufferAttribute(data.uv,2));geo.setIndex(data.index);geo.computeVertexNormals();
+        if(i===2){const colors=[],white=new T.Color('#ffffff'),warm=new T.Color('#dcb5a5');
+          for(let j=0;j<data.position.length;j+=3){const x=data.position[j],y=data.position[j+1],z=data.position[j+2],cheek=Math.exp(-((Math.abs(x)-.09)**2/.002+(y+.015)**2/.004))*Math.max(0,z*5),c=white.clone().lerp(warm,cheek*.3);colors.push(c.r,c.g,c.b);}
+          geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));
+        }add(h,geo,faceMaterials[i]);
+      });
       // The hair continues around the occiput and nape beneath the beanie.
       // It is a fitted shell, not a stack of spherical locks or a bald back.
       const hairPos=[],hairUV=[],hairIndex=[],hairProfile=[[-.132,.085,.083],[-.11,.125,.111],[-.06,.157,.146],[0,.17,.158],[.07,.165,.153],[.14,.127,.124]],hairSides=32;
@@ -292,26 +293,35 @@
       for(let i=0;i<8;i++){const a=i*TAU/8;ball(l,m.metal,Math.sin(a)*.06,.113,Math.cos(a)*.06,.005,.002,.005);}
       const wheel=add(l,new T.CylinderGeometry(.014,.014,.008,12),m.metal,.094,-.06,0);wheel.rotation.z=Math.PI/2;
     }
+    sampleMotion(name,phase,out){
+      const frames=SkogCharacterAssets.clips[name].frames,u=((phase/TAU%1)+1)%1*frames.length,index=Math.floor(u),a=frames[index],b=frames[(index+1)%frames.length],mix=u-index;
+      for(let i=0;i<out.length;i++)out[i]=a[i]+(b[i]-a[i])*mix;
+    }
     setLantern(on){this.lanternOn=!!on;}
     setVisible(value){this.visible=value;this.group.visible=value;}
     update(t,dt,player){
       const height=SkogWorld.height(player.x,player.z);this.group.position.set(player.x,height+.006,player.z);this.group.rotation.y=player.heading;
       const speed=player.motionSpeed??player.speed;
       const target=clamp(speed/1.8,0,1),blend=1-Math.exp(-dt*10);this.motion+=(target-this.motion)*blend;
-      const running=clamp((speed-2.1)/1.4,0,1),phase=player.walk;
-      const bob=Math.cos(phase*2)*.012*this.motion;this.body.position.y=bob-.004-.045*this.motion-.025*running;
-      this.body.rotation.z=Math.sin(phase)*.022*this.motion;this.body.rotation.x=.035*this.motion+.065*running;
+      this.runBlend+=(clamp((speed-2.1)/1.4,0,1)-this.runBlend)*blend;
+      const running=this.runBlend,phase=player.walk;
+      this.sampleMotion('Idle_Loop',t/SkogCharacterAssets.clips.Idle_Loop.duration*TAU,this.idlePose);
+      this.sampleMotion('Walk_Loop',phase,this.walkPose);this.sampleMotion('Jog_Fwd_Loop',phase,this.runPose);
+      for(let i=0;i<15;i++)this.pose[i]=T.MathUtils.lerp(this.idlePose[i],T.MathUtils.lerp(this.walkPose[i],this.runPose[i],running),this.motion);
+      const pose=this.pose,bob=pose[0]*(.55-.30*running);
+      this.body.position.y=bob-.012-.035*this.motion-.025*running;
+      this.body.rotation.set((pose[1]-.29)*.22+.035*this.motion,pose[2]*.12,pose[3]*.20);
       const turnDelta=Math.atan2(Math.sin(player.heading-this.lastHeading),Math.cos(player.heading-this.lastHeading));this.lastHeading=player.heading;
       this.turn+=(clamp(turnDelta/Math.max(dt,.001),-3,3)-this.turn)*(1-Math.exp(-dt*4));
-      this.head.rotation.y=Math.sin(t*.38)*.045-this.turn*.035;this.head.rotation.x=-.025+Math.sin(t*.7)*.012;
+      this.head.rotation.y=pose[5]*.65-this.turn*.035;this.head.rotation.x=-.025+(pose[4]-.24)*.3;
       this.neck.rotation.y=Math.sin(phase)*.024*this.motion;
       this.pack.rotation.x=-.018+Math.sin(phase*2+.7)*.025*this.motion;this.pack.rotation.z=-Math.sin(phase)*.018*this.motion;
       for(let i=0;i<2;i++){
-        const leg=this.legs[i],a=phase+i*Math.PI,swing=Math.max(0,-Math.sin(a));
-        const stride=(.20+.085*running)*this.motion,z=Math.cos(a)*stride;
+        const leg=this.legs[i],a=phase+i*Math.PI,offset=7+i*4,lift=pose[offset+1]*(.62-.18*running)*this.motion,swing=clamp(lift/.1,0,1);
+        const z=pose[offset]*(.66-.13*running)*this.motion;
         const localX=leg.side*.105,worldX=player.x+Math.cos(player.heading)*localX+Math.sin(player.heading)*z,worldZ=player.z-Math.sin(player.heading)*localX+Math.cos(player.heading)*z;
         const rise=clamp(SkogWorld.height(worldX,worldZ)-height,-.13,.13);
-        const ankleY=.13+rise+Math.pow(swing,.8)*(.09+.06*running)*this.motion;
+        const ankleY=.13+rise+lift;
         const dy=.65+this.body.position.y-ankleY,l1=.27,l2=.26,d=clamp(Math.hypot(dy,z),.17,l1+l2-.002);
         const upper=Math.atan2(z,dy)+Math.acos(clamp((l1*l1+d*d-l2*l2)/(2*l1*d),-1,1));
         const bend=Math.PI-Math.acos(clamp((l1*l1+l2*l2-d*d)/(2*l1*l2),-1,1));
@@ -321,9 +331,9 @@
         leg.foot.rotation.x=upper-bend-this.body.rotation.x+Math.max(0,Math.sin(a))*.08*this.motion;
         leg.foot.rotation.z=-this.body.rotation.z;
         const arm=this.arms[i];
-        arm.shoulder.rotation.x=(i===0?-.06:0)+Math.sin(a)*(.22+.18*running)*this.motion;
+        arm.shoulder.rotation.x=i===0?-.08+pose[offset+2]*.20:pose[offset+2]*.65;
         arm.shoulder.rotation.z=arm.side*(.11+.04*this.motion);
-        arm.elbow.rotation.x=i===0?-.24-Math.sin(a)*.045*this.motion:-.13-.24*running-Math.max(0,-Math.sin(a))*.13*this.motion;
+        arm.elbow.rotation.x=i===0?-.28+(pose[offset+3]-pose[offset+2])*.08:(pose[offset+3]-pose[offset+2])*.7;
         arm.skin.joint.rotation.x=arm.elbow.rotation.x;
         arm.hand.rotation.x=-(arm.shoulder.rotation.x+arm.elbow.rotation.x)*.35;
       }
@@ -336,18 +346,19 @@
       // Place the supporting sole on the sloped ground. The centimetre-scale
       // ankle correction lives inside the boot collar and prevents foot hover
       // when torso sway or a steep little ridge changes the analytic IK plane.
-      for(const leg of this.legs)if(leg.swing<.04){
+      for(const leg of this.legs){
         let correction=-Infinity;
         for(const [x,z] of [[0,.037],[-.05,-.04],[.05,-.04],[-.05,.12],[.05,.12]]){
           this.footA.set(x,-.1275,z).applyMatrix4(leg.foot.matrixWorld);
           correction=Math.max(correction,SkogWorld.height(this.footA.x,this.footA.z)+.002-this.footA.y);
         }
-        leg.knee.getWorldQuaternion(this.footRotation).invert();this.footB.set(0,clamp(correction,-.035,.035),0).applyQuaternion(this.footRotation);leg.foot.position.add(this.footB);
+        leg.knee.getWorldQuaternion(this.footRotation).invert();this.footB.set(0,clamp(correction,leg.swing<.04?-.035:0,.045),0).applyQuaternion(this.footRotation);leg.foot.position.add(this.footB);
       }
-      this.group.updateMatrixWorld(true);this.lantern.getWorldPosition(this.lightPosition);this.lanternLight.position.copy(this.lightPosition);
+      this.group.updateMatrixWorld(true);this.flame.getWorldPosition(this.lightPosition);this.lanternLight.position.copy(this.lightPosition);
       this.lanternLevel+=(Number(this.lanternOn)-this.lanternLevel)*(1-Math.exp(-dt*7));
       const level=this.lanternLevel;
       this.lanternLight.intensity=level*(20+Math.sin(t*7.7)*.48+Math.sin(t*13.1)*.26);
+      this.lanternLight.shadow.autoUpdate=level>.015;
       this.flame.visible=level>.015;this.flameHalo.visible=level>.015;
       this.flame.material.color.setRGB(4.2*level,2.5*level,.9*level);
       this.flameHalo.material.opacity=.2*level;

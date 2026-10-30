@@ -15,11 +15,12 @@
       this.scene.add(new T.HemisphereLight('#9cbfc2','#333128',.42));
       this.moonlight=new T.DirectionalLight('#b7d3da',.75);this.moonlight.position.set(-24,38,-36);this.moonlight.castShadow=true;
       const shadow=this.moonlight.shadow;shadow.mapSize.set(1024,1024);shadow.camera.left=-22;shadow.camera.right=22;shadow.camera.top=22;shadow.camera.bottom=-22;shadow.camera.near=1;shadow.camera.far=100;shadow.normalBias=.045;shadow.bias=-.0003;
+      shadow.autoUpdate=false;shadow.needsUpdate=true;
       this.scene.add(this.moonlight,this.moonlight.target);
       this.glow=glowTexture();
       this.environment=new SkogEnvironment(this);this.environment.build();
       this.buildSky();this.buildAtmosphere();this.buildChild();
-      this.pipeline=new SkogRenderPipeline(this.renderer,this.scene,this.camera);
+      this.pipeline=new SkogRenderPipeline(this.renderer,this.scene,this.camera,this.child);
       this.scene.updateMatrixWorld(true);this.lastShadow=new T.Vector3(999,999,999);this.frames=0;
     }
     buildSky(){
@@ -39,10 +40,9 @@
       this.character=new SkogCharacter({scene:this.scene,glowTexture:this.glow});
       this.child=this.character.group;this.lanternLight=this.character.lanternLight;
       this.character.flame.material.color.setRGB(4.2,2.5,.9);
-      // Local bounced lantern light softens the upward flame shadows on the
-      // face and coat. It fades with the flame; only a faint sky fill remains.
-      this.characterFill=new T.PointLight('#e1c8a5',3.8,4.5,1.7);
-      this.skyFillColor=new T.Color('#b0c2cb');this.lanternFillColor=new T.Color('#e1c8a5');
+      // Restrained cool sky fill keeps the face readable. Warm light comes
+      // from the occluded lantern, rather than an unshadowed second source.
+      this.characterFill=new T.PointLight('#b0c2cb',.55,4.5,1.7);
       this.scene.add(this.characterFill);
       const contact=canvasTexture(64,(c)=>{const g=c.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,"rgba(0,0,0,.68)");g.addColorStop(1,"rgba(0,0,0,0)");c.fillStyle=g;c.fillRect(0,0,64,64);});
       this.contact=mesh(new T.PlaneGeometry(1.2,1.2),new T.MeshBasicMaterial({map:contact,transparent:true,depthWrite:false}),this.scene);this.contact.rotation.x=-Math.PI/2;this.contact.castShadow=false;
@@ -56,8 +56,6 @@
     update(t,dt,player,camera){
       this.character.update(t,dt,player);
       this.characterFill.position.set(player.x+Math.sin(player.heading)*1.1,W.height(player.x,player.z)+2.2,player.z+Math.cos(player.heading)*1.1);
-      this.characterFill.intensity=.55+3.25*this.character.lanternLevel;
-      this.characterFill.color.copy(this.skyFillColor).lerp(this.lanternFillColor,this.character.lanternLevel);
       this.environment.update(t,player);
       this.contact.position.set(player.x,W.height(player.x,player.z)+.035,player.z);
       for(let i=0;i<2;i++){
@@ -77,11 +75,11 @@
       this.camera.position.copy(desired);this.camera.lookAt(target);
       // Avoid an opaque head filling the view when backing up against a tree.
       this.character.setVisible(allowed>1);
-      if(this.lastShadow.distanceToSquared(this.child.position)>9){this.moonlight.position.copy(this.child.position).add(new T.Vector3(-24,38,-36));this.moonlight.target.position.copy(this.child.position);this.lastShadow.copy(this.child.position);this.renderer.shadowMap.needsUpdate=true;}
+      if(this.lastShadow.distanceToSquared(this.child.position)>9){this.moonlight.position.copy(this.child.position).add(new T.Vector3(-24,38,-36));this.moonlight.target.position.copy(this.child.position);this.lastShadow.copy(this.child.position);this.moonlight.shadow.needsUpdate=true;}
       for(const m of this.mist){m.sprite.position.x=m.x+Math.sin(t*.035+m.phase)*4;m.sprite.position.z=m.z+Math.cos(t*.027+m.phase)*2;}
       const pos=this.motes.geometry.attributes.position;for(let i=0;i<this.moteData.length;i++){const m=this.moteData[i];pos.setXYZ(i,m.x+Math.sin(t*.2+m.phase)*.5,m.y+Math.sin(t*.45+m.phase)*.25,m.z+Math.cos(t*.16+m.phase)*.5);}pos.needsUpdate=true;
       this.pumpkins.forEach((p,i)=>p.material.opacity=.13+Math.sin(t*3+i)*.025);
-      this.pipeline.render(t);this.renderer.shadowMap.autoUpdate=false;this.frames++;
+      this.pipeline.render(t,player.motionSpeed||0);this.frames++;
     }
     resize(){this.camera.aspect=innerWidth/innerHeight;this.camera.fov=innerWidth<innerHeight?64:56;this.camera.updateProjectionMatrix();this.renderer.setSize(innerWidth,innerHeight);this.pipeline?.resize();}
     setQuality(ratio){this.renderer.setPixelRatio(ratio);this.renderer.setSize(innerWidth,innerHeight);this.pipeline?.resize();}
