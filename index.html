@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#111d20">
+  <meta name="description" content="En liten människa. En stor, mörk skog.">
+  <title>Skog</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="vendor/three.min.js"></script>
+  <script defer src="world.js"></script>
+  <script defer src="forest.js"></script>
+  <script defer src="sound.js"></script>
+  <script defer src="game.js"></script>
+</head>
+<body>
+  <canvas id="forest" aria-label="En mörk skog i tredjepersonsvy. Styr med WASD eller piltangenter och dra för att se dig omkring."></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+  <div id="title-screen" class="screen">
+    <div class="title-card">
+      <div class="overline">EN VANDRING I MÖRKRET</div>
+      <h1>SKOG</h1>
+      <p>Du är inte riktigt ensam här.</p>
+      <button id="enter" class="primary" disabled>Skogen vaknar …</button>
+      <span class="title-note" id="title-controls">WASD / piltangenter · dra för att se dig omkring</span>
+    </div>
+  </div>
+  <div id="hud" hidden>
+    <div class="toolbar">
+      <button id="sound" class="icon-button" aria-label="Stäng av ljud" aria-pressed="true" title="Ljud (M)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path class="sound-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="sound-off" d="m16 9 6 6m0-6-6 6"/></svg>
+      </button>
+      <button id="pause" class="icon-button" aria-label="Pausa och visa kontroller" title="Paus (Esc)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg></button>
+    </div>
+    <div id="hint" class="hint">Följ stigen. Eller låt bli.</div>
+    <div id="touch-controls" aria-hidden="true">
+      <div class="touch-label move-label">GÅ</div>
+      <div class="touch-label look-label">SE DIG OMKRING</div>
+      <div id="joystick" class="joystick"><div id="stick"></div></div>
+      <button id="run" aria-label="Håll för att springa">SPRING</button>
+    </div>
+  </div>
+  <dialog id="pause-dialog">
+    <div class="overline">SKOG</div>
+    <h2>En liten paus</h2>
+    <div class="instructions desktop-instructions">
+      <p><span>Gå</span><b>W A S D / pilar</b></p>
+      <p><span>Se dig omkring</span><b>Dra med musen / Q E</b></p>
+      <p><span>Spring</span><b>Håll Skift</b></p>
+      <p><span>Närmare / längre bort</span><b>Skrolla</b></p>
+    </div>
+    <div class="instructions touch-instructions">
+      <p><span>Gå</span><b>Dra på vänster sida</b></p>
+      <p><span>Se dig omkring</span><b>Dra på höger sida</b></p>
+      <p><span>Spring</span><b>Håll SPRING medan du går</b></p>
+    </div>
+    <p class="quiet">Än så länge finns bara skogen.<br>Ta den tid du behöver.</p>
+    <button id="resume" class="primary">Tillbaka till skogen</button>
+    <button id="restart" class="text-button">Tillbaka till stigens början</button>
+  </dialog>
+  <div id="error" class="screen" hidden><div class="error-card"><h2>Skogen kunde inte vakna</h2><p id="error-text">Webbläsaren behöver stöd för WebGL. Prova att uppdatera sidan eller använda en annan webbläsare.</p><button class="primary" onclick="location.reload()">Försök igen</button></div></div>
+</body>
+</html>
