@@ -110,8 +110,8 @@
       };
       this.buildTorso();this.buildHead();this.buildPack();this.buildLegs();this.buildArms();this.buildLantern(glowTexture);
       consolidate(this.body);
-      this.lanternLight=new T.PointLight('#ffd39a',6.5,12,1.75);scene.add(this.lanternLight);
-      this.lightPosition=V();this.footA=V();this.footB=V();this.footRotation=new T.Quaternion();this.motion=0;this.turn=0;this.lastHeading=0;this.visible=true;
+      this.lanternLight=new T.PointLight('#ffcc8c',20,26,1.1);scene.add(this.lanternLight);
+      this.lanternOn=true;this.lanternLevel=1;this.lightPosition=V();this.footA=V();this.footB=V();this.footRotation=new T.Quaternion();this.motion=0;this.turn=0;this.lastHeading=0;this.visible=true;
       this.group.updateMatrixWorld(true);
     }
     buildTorso(){
@@ -292,6 +292,7 @@
       for(let i=0;i<8;i++){const a=i*TAU/8;ball(l,m.metal,Math.sin(a)*.06,.113,Math.cos(a)*.06,.005,.002,.005);}
       const wheel=add(l,new T.CylinderGeometry(.014,.014,.008,12),m.metal,.094,-.06,0);wheel.rotation.z=Math.PI/2;
     }
+    setLantern(on){this.lanternOn=!!on;}
     setVisible(value){this.visible=value;this.group.visible=value;}
     update(t,dt,player){
       const height=SkogWorld.height(player.x,player.z);this.group.position.set(player.x,height+.006,player.z);this.group.rotation.y=player.heading;
@@ -344,7 +345,13 @@
         leg.knee.getWorldQuaternion(this.footRotation).invert();this.footB.set(0,clamp(correction,-.035,.035),0).applyQuaternion(this.footRotation);leg.foot.position.add(this.footB);
       }
       this.group.updateMatrixWorld(true);this.lantern.getWorldPosition(this.lightPosition);this.lanternLight.position.copy(this.lightPosition);
-      this.lanternLight.intensity=6.5+Math.sin(t*7.7)*.18+Math.sin(t*13.1)*.10;
+      this.lanternLevel+=(Number(this.lanternOn)-this.lanternLevel)*(1-Math.exp(-dt*7));
+      const level=this.lanternLevel;
+      this.lanternLight.intensity=level*(20+Math.sin(t*7.7)*.48+Math.sin(t*13.1)*.26);
+      this.flame.visible=level>.015;this.flameHalo.visible=level>.015;
+      this.flame.material.color.setRGB(4.2*level,2.5*level,.9*level);
+      this.flameHalo.material.opacity=.2*level;
+      if(this.glow)this.glow.material.opacity=.32*level;
     }
     get stats(){let triangles=0,draws=0;this.group.traverse(o=>{if(o.isMesh){triangles+=(o.geometry.index?o.geometry.index.count:o.geometry.attributes.position.count)/3;draws++;}});return {triangles,draws};}
   }

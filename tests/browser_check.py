@@ -99,6 +99,21 @@ def layout(browser, width, height, is_touch):
         for r in measures["buttons"]:
             assert r["w"] >= 44 and r["h"] >= 44, r
             assert r["x"] >= 0 and r["y"] >= 0 and r["right"] <= width and r["bottom"] <= height, r
+        # Both input modes must control the actual light and the visible flame.
+        if is_touch:
+            tap(page, cdp, "#lantern")
+        else:
+            page.keyboard.press("l")
+        page.wait_for_function("Skog.forest.character.lanternLevel < .01", timeout=10000)
+        assert page.locator("#lantern").get_attribute("aria-pressed") == "false"
+        assert page.evaluate("Skog.forest.lanternLight.intensity < 1 && !Skog.forest.character.flame.visible")
+        if is_touch:
+            tap(page, cdp, "#lantern")
+        else:
+            page.keyboard.press("l")
+        page.wait_for_function("Skog.forest.character.lanternLevel > .98", timeout=10000)
+        assert page.locator("#lantern").get_attribute("aria-pressed") == "true"
+        assert page.evaluate("Skog.forest.lanternLight.intensity > 18 && Skog.forest.character.flame.visible")
         initial = page.evaluate("({...Skog.player,yaw:Skog.camera.yaw})")
         if is_touch:
             x, y = width * .23, height * .7

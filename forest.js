@@ -12,8 +12,8 @@
       this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.08;
       this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=T.PCFSoftShadowMap;
       this.camera=new T.PerspectiveCamera(56,innerWidth/innerHeight,.1,180);
-      this.scene.add(new T.HemisphereLight('#9cbfc2','#333128',1.15));
-      this.moonlight=new T.DirectionalLight('#b7d3da',2.2);this.moonlight.position.set(-24,38,-36);this.moonlight.castShadow=true;
+      this.scene.add(new T.HemisphereLight('#9cbfc2','#333128',.42));
+      this.moonlight=new T.DirectionalLight('#b7d3da',.75);this.moonlight.position.set(-24,38,-36);this.moonlight.castShadow=true;
       const shadow=this.moonlight.shadow;shadow.mapSize.set(1024,1024);shadow.camera.left=-22;shadow.camera.right=22;shadow.camera.top=22;shadow.camera.bottom=-22;shadow.camera.near=1;shadow.camera.far=100;shadow.normalBias=.045;shadow.bias=-.0003;
       this.scene.add(this.moonlight,this.moonlight.target);
       this.glow=glowTexture();
@@ -39,9 +39,10 @@
       this.character=new SkogCharacter({scene:this.scene,glowTexture:this.glow});
       this.child=this.character.group;this.lanternLight=this.character.lanternLight;
       this.character.flame.material.color.setRGB(4.2,2.5,.9);
-      // A soft local sky bounce preserves face and fabric detail under the
-      // broad forest shadow atlas without brightening the distant woods.
-      this.characterFill=new T.PointLight('#b0c2cb',2,4.5,1.7);
+      // Local bounced lantern light softens the upward flame shadows on the
+      // face and coat. It fades with the flame; only a faint sky fill remains.
+      this.characterFill=new T.PointLight('#e1c8a5',3.8,4.5,1.7);
+      this.skyFillColor=new T.Color('#b0c2cb');this.lanternFillColor=new T.Color('#e1c8a5');
       this.scene.add(this.characterFill);
       const contact=canvasTexture(64,(c)=>{const g=c.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,"rgba(0,0,0,.68)");g.addColorStop(1,"rgba(0,0,0,0)");c.fillStyle=g;c.fillRect(0,0,64,64);});
       this.contact=mesh(new T.PlaneGeometry(1.2,1.2),new T.MeshBasicMaterial({map:contact,transparent:true,depthWrite:false}),this.scene);this.contact.rotation.x=-Math.PI/2;this.contact.castShadow=false;
@@ -55,6 +56,8 @@
     update(t,dt,player,camera){
       this.character.update(t,dt,player);
       this.characterFill.position.set(player.x+Math.sin(player.heading)*1.1,W.height(player.x,player.z)+2.2,player.z+Math.cos(player.heading)*1.1);
+      this.characterFill.intensity=.55+3.25*this.character.lanternLevel;
+      this.characterFill.color.copy(this.skyFillColor).lerp(this.lanternFillColor,this.character.lanternLevel);
       this.environment.update(t,player);
       this.contact.position.set(player.x,W.height(player.x,player.z)+.035,player.z);
       for(let i=0;i<2;i++){

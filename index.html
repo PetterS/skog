@@ -33,6 +33,9 @@
   </div>
   <div id="hud" hidden>
     <div class="toolbar">
+      <button id="lantern" class="icon-button" aria-label="Släck lyktan" aria-pressed="true" title="Lyktan (L)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7V5a3 3 0 0 1 6 0v2M8 8h8l1 10H7L8 8ZM6 20h12M10 11c0 2-1 2.5-1 4a3 3 0 0 0 6 0c0-1.5-1-2-2-4 0 1-.5 1.5-1 2-.5-.5-1-1-2-2Z"/><path class="lantern-off" d="M4 4l16 16"/></svg>
+      </button>
       <button id="sound" class="icon-button" aria-label="Stäng av ljud" aria-pressed="true" title="Ljud (M)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path class="sound-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="sound-off" d="m16 9 6 6m0-6-6 6"/></svg>
       </button>
@@ -53,12 +56,14 @@
       <p><span>Gå</span><b>W A S D / pilar</b></p>
       <p><span>Se dig omkring</span><b>Dra med musen / Q E</b></p>
       <p><span>Spring</span><b>Håll Skift</b></p>
+      <p><span>Tänd / släck lyktan</span><b>L</b></p>
       <p><span>Närmare / längre bort</span><b>Skrolla</b></p>
     </div>
     <div class="instructions touch-instructions">
       <p><span>Gå</span><b>Dra på vänster sida</b></p>
       <p><span>Se dig omkring</span><b>Dra på höger sida</b></p>
       <p><span>Spring</span><b>Håll SPRING medan du går</b></p>
+      <p><span>Tänd / släck lyktan</span><b>Tryck på lyktan</b></p>
     </div>
     <p class="quiet">Än så länge finns bara skogen.<br>Ta den tid du behöver.</p>
     <button id="resume" class="primary">Tillbaka till skogen</button>

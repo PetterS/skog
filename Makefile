@@ -1,3 +1,3 @@
 .PHONY: test
 test:
-	bun test tests/world.test.js
+	bun test tests/*.test.js

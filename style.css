@@ -18,3 +18,5 @@ dialog{color:#e4e5d5;background:#132123f5;border:1px solid #92a99d3b;border-radi
 .touch .joystick.active #stick{left:35px;top:35px}
 .hint.edge-notice{max-width:calc(100vw - 40px);white-space:normal;text-align:center;color:#e3e4d1;line-height:1.5;letter-spacing:.04em}
 .touch .hint.edge-notice{bottom:max(150px,calc(env(safe-area-inset-bottom) + 130px));font-size:11px}
+
+.lantern-off{display:none}#lantern[aria-pressed=false] .lantern-off{display:block}

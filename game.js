@@ -13,6 +13,10 @@
     hintTimer=setTimeout(()=>hint.classList.add('faded'),duration);
   }
   function soundUI(){$('#sound').setAttribute('aria-pressed',String(sound.enabled));$('#sound').setAttribute('aria-label',sound.enabled?'Stäng av ljud':'Slå på ljud');}
+  function toggleLantern(){
+    const on=!forest.character.lanternOn;forest.character.setLantern(on);
+    $('#lantern').setAttribute('aria-pressed',String(on));$('#lantern').setAttribute('aria-label',on?'Släck lyktan':'Tänd lyktan');
+  }
   function setTouch(value){touchMode=value;document.body.classList.toggle('touch',value);$('#touch-controls').setAttribute('aria-hidden',String(!value));$('#title-controls').textContent=value?'Dra till vänster för att gå · dra till höger för att se dig omkring':'WASD / piltangenter · dra för att se dig omkring';}
   setTouch(touchMode);soundUI();
   function resetInput(){keys.clear();pointers.clear();move.x=move.y=0;runHeld=false;$('#run').classList.remove('held');$('#joystick').classList.remove('active');$('#joystick').removeAttribute('style');$('#stick').style.transform='';}
@@ -24,14 +28,15 @@
   $('#pause').addEventListener('click',pause);$('#resume').addEventListener('click',resume);
   $('#pause-dialog').addEventListener('cancel',e=>{e.preventDefault();resume();});
   $('#sound').addEventListener('click',toggleSound);
+  $('#lantern').addEventListener('click',toggleLantern);
   $('#restart').addEventListener('click',()=>{Object.assign(player,{x:0,z:7,heading:Math.PI,speed:0,motionSpeed:0,walk:0});Object.assign(camera,{yaw:.08,pitch:.27,distance:6.6,actualDistance:6.6});edgeLatched=false;nextEdgeNotice=0;clearTimeout(hintTimer);$('#hint').classList.add('faded');resume();});
   function live(){return state.started&&!state.paused&&!document.hidden;}
   window.addEventListener('keydown',e=>{
     if(e.code==='Escape'){e.preventDefault();if(state.paused)resume();else pause();return;}
     if(!live())return;
     if(e.target instanceof HTMLButtonElement&&(e.code==='Space'||e.code==='Enter'))return;
-    if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','KeyQ','KeyE','KeyM','Space'].includes(e.code)){
-      e.preventDefault();keys.add(e.code);if(e.code==='KeyM'&&!e.repeat)toggleSound();else sound.unlock();
+    if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','KeyQ','KeyE','KeyM','KeyL','Space'].includes(e.code)){
+      e.preventDefault();keys.add(e.code);if(e.code==='KeyM'&&!e.repeat)toggleSound();else if(e.code==='KeyL'&&!e.repeat)toggleLantern();else sound.unlock();
     }
   });
   window.addEventListener('keyup',e=>keys.delete(e.code));
