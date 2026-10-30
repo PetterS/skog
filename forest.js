@@ -6,14 +6,14 @@
   function mesh(geometry,mat,parent,x=0,y=0,z=0){const m=new T.Mesh(geometry,mat);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
   class Forest {
     constructor(canvas,world){
-      this.world=world;this.scene=new T.Scene();this.scene.background=new T.Color('#293e46');this.scene.fog=new T.FogExp2('#293e46',.033);
+      this.world=world;this.scene=new T.Scene();this.scene.background=new T.Color('#06090b');this.scene.fog=new T.FogExp2('#111b20',.046);
       this.renderer=new T.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
       this.renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));this.renderer.setSize(innerWidth,innerHeight);
-      this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.08;
+      this.renderer.outputColorSpace=T.SRGBColorSpace;this.renderer.toneMapping=T.ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.15;this.exposure=1.15;
       this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=T.PCFSoftShadowMap;
       this.camera=new T.PerspectiveCamera(56,innerWidth/innerHeight,.1,180);
-      this.scene.add(new T.HemisphereLight('#9cbfc2','#333128',.42));
-      this.moonlight=new T.DirectionalLight('#b7d3da',.75);this.moonlight.position.set(-24,38,-36);this.moonlight.castShadow=true;
+      this.hemisphere=new T.HemisphereLight('#6b8592','#16150f',.16);this.scene.add(this.hemisphere);
+      this.moonlight=new T.DirectionalLight('#9db7d1',.42);this.moonlight.position.set(-24,38,-36);this.moonlight.castShadow=true;
       const shadow=this.moonlight.shadow;shadow.mapSize.set(1024,1024);shadow.camera.left=-22;shadow.camera.right=22;shadow.camera.top=22;shadow.camera.bottom=-22;shadow.camera.near=1;shadow.camera.far=100;shadow.normalBias=.045;shadow.bias=-.0003;
       shadow.autoUpdate=false;shadow.needsUpdate=true;
       this.scene.add(this.moonlight,this.moonlight.target);
@@ -21,20 +21,26 @@
       this.environment=new SkogEnvironment(this);this.environment.build();
       this.buildSky();this.buildAtmosphere();this.buildChild();
       this.pipeline=new SkogRenderPipeline(this.renderer,this.scene,this.camera,this.child);
+      // Scattering strengths are tuned for the HDR haze; the direct fallback
+      // keeps exponential fog, mist cards and a soft halo around the flame.
+      this.pipeline.atmosphere={moon:this.moonlight,lantern:this.lanternLight,ambient:new T.Color(.0024,.0036,.0048),moonScatter:.035,lanternScatter:.09,mist:.08};
+      const volumetric=this.pipeline.enabled;
+      for(const m of this.mist)m.sprite.visible=!volumetric;
+      this.fallbackHalo=new T.Sprite(new T.SpriteMaterial({map:this.glow,color:'#ffb066',transparent:true,opacity:.16,depthWrite:false,blending:T.AdditiveBlending}));
+      this.fallbackHalo.scale.setScalar(5);this.fallbackHalo.visible=!volumetric;this.scene.add(this.fallbackHalo);
+      this.presence=new SkogPresence(this);
       this.scene.updateMatrixWorld(true);this.lastShadow=new T.Vector3(999,999,999);this.frames=0;
     }
     buildSky(){
-      const moon=mesh(new T.SphereGeometry(4.2,24,16),new T.MeshBasicMaterial({color:'#e1e3c6',fog:false}),this.scene,-35,61,-100);moon.castShadow=false;
-      const halo=new T.Sprite(new T.SpriteMaterial({map:this.glow,color:'#bfd4cb',transparent:true,opacity:.24,depthWrite:false,fog:false,blending:T.AdditiveBlending}));halo.position.copy(moon.position);halo.scale.set(32,32,1);this.scene.add(halo);
+      const moon=mesh(new T.SphereGeometry(4.2,24,16),new T.MeshBasicMaterial({color:'#9fa49a',fog:false}),this.scene,-35,61,-100);moon.castShadow=false;
+      const halo=new T.Sprite(new T.SpriteMaterial({map:this.glow,color:'#7f94a0',transparent:true,opacity:.12,depthWrite:false,fog:false,blending:T.AdditiveBlending}));halo.position.copy(moon.position);halo.scale.set(32,32,1);this.scene.add(halo);
       const starPos=[],rng=W.random(17);for(let i=0;i<230;i++){const x=(rng()-.5)*260,z=(rng()-.5)*260,y=75+rng()*45;starPos.push(x,y,z);}
-      const stars=new T.BufferGeometry();stars.setAttribute('position',new T.Float32BufferAttribute(starPos,3));this.scene.add(new T.Points(stars,new T.PointsMaterial({color:'#c1d5cf',size:.12,transparent:true,opacity:.45,fog:false,depthWrite:false})));
+      const stars=new T.BufferGeometry();stars.setAttribute('position',new T.Float32BufferAttribute(starPos,3));this.scene.add(new T.Points(stars,new T.PointsMaterial({color:'#8fa0a6',size:.12,transparent:true,opacity:.22,fog:false,depthWrite:false})));
     }
     buildAtmosphere(){
       const fogMap=canvasTexture(128,(c,s)=>{const g=c.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(208,225,220,.24)');g.addColorStop(.4,'rgba(208,225,220,.14)');g.addColorStop(1,'rgba(208,225,220,0)');c.fillStyle=g;c.fillRect(0,0,s,s);});
       this.mist=[];const rng=W.random(222);
-      for(let i=0;i<36;i++){const x=(rng()-.5)*105,z=(rng()-.5)*105;const sprite=new T.Sprite(new T.SpriteMaterial({map:fogMap,color:'#a6c1bb',opacity:.22,transparent:true,depthWrite:false}));sprite.position.set(x,W.height(x,z)+.6+rng()*1.1,z);sprite.scale.set(13+rng()*15,2+rng()*2,1);this.scene.add(sprite);this.mist.push({sprite,x,z,phase:rng()*TAU});}
-      const positions=[];this.moteData=[];for(let i=0;i<100;i++){const x=(rng()-.5)*100,z=(rng()-.5)*100,y=W.height(x,z)+.5+rng()*3;positions.push(x,y,z);this.moteData.push({x,y,z,phase:rng()*TAU});}
-      const geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));this.motes=new T.Points(geo,new T.PointsMaterial({map:this.glow,color:'#d6d5a2',size:.14,transparent:true,opacity:.7,depthWrite:false,blending:T.AdditiveBlending}));this.scene.add(this.motes);
+      for(let i=0;i<36;i++){const x=(rng()-.5)*105,z=(rng()-.5)*105;const sprite=new T.Sprite(new T.SpriteMaterial({map:fogMap,color:'#3c4d52',opacity:.2,transparent:true,depthWrite:false}));sprite.position.set(x,W.height(x,z)+.6+rng()*1.1,z);sprite.scale.set(13+rng()*15,2+rng()*2,1);this.scene.add(sprite);this.mist.push({sprite,x,z,phase:rng()*TAU});}
     }
     buildChild(){
       this.character=new SkogCharacter({scene:this.scene,glowTexture:this.glow});
@@ -42,7 +48,7 @@
       this.character.flame.material.color.setRGB(4.2,2.5,.9);
       // Restrained cool sky fill keeps the face readable. Warm light comes
       // from the occluded lantern, rather than an unshadowed second source.
-      this.characterFill=new T.PointLight('#b0c2cb',.55,4.5,1.7);
+      this.characterFill=new T.PointLight('#8ea3b0',.3,4.5,1.7);
       this.scene.add(this.characterFill);
       const contact=canvasTexture(64,(c)=>{const g=c.createRadialGradient(32,32,0,32,32,32);g.addColorStop(0,"rgba(0,0,0,.68)");g.addColorStop(1,"rgba(0,0,0,0)");c.fillStyle=g;c.fillRect(0,0,64,64);});
       this.contact=mesh(new T.PlaneGeometry(1.2,1.2),new T.MeshBasicMaterial({map:contact,transparent:true,depthWrite:false}),this.scene);this.contact.rotation.x=-Math.PI/2;this.contact.castShadow=false;
@@ -77,7 +83,13 @@
       this.character.setVisible(allowed>1);
       if(this.lastShadow.distanceToSquared(this.child.position)>9){this.moonlight.position.copy(this.child.position).add(new T.Vector3(-24,38,-36));this.moonlight.target.position.copy(this.child.position);this.lastShadow.copy(this.child.position);this.moonlight.shadow.needsUpdate=true;}
       for(const m of this.mist){m.sprite.position.x=m.x+Math.sin(t*.035+m.phase)*4;m.sprite.position.z=m.z+Math.cos(t*.027+m.phase)*2;}
-      const pos=this.motes.geometry.attributes.position;for(let i=0;i<this.moteData.length;i++){const m=this.moteData[i];pos.setXYZ(i,m.x+Math.sin(t*.2+m.phase)*.5,m.y+Math.sin(t*.45+m.phase)*.25,m.z+Math.cos(t*.16+m.phase)*.5);}pos.needsUpdate=true;
+      const level=this.character.lanternLevel;
+      this.presence.update(t,dt,player,camera,level,this.lanternLight);
+      this.fallbackHalo.position.copy(this.lanternLight.position);this.fallbackHalo.material.opacity=.16*level;
+      // Eyes adapt: losing the flame plunges everything into black, then the
+      // night slowly resolves. Relighting is briefly dazzling.
+      const adapted=1.15+(1-level)*1.25,rate=adapted>this.exposure?.22:2.5;
+      this.exposure+=(adapted-this.exposure)*(1-Math.exp(-dt*rate));this.renderer.toneMappingExposure=this.exposure;
       this.pumpkins.forEach((p,i)=>p.material.opacity=.13+Math.sin(t*3+i)*.025);
       this.pipeline.render(t,player.motionSpeed||0);this.frames++;
     }

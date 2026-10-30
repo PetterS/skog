@@ -114,7 +114,7 @@ def layout(browser, width, height, is_touch):
             page.keyboard.press("l")
         page.wait_for_function("Skog.forest.character.lanternLevel > .98", timeout=10000)
         assert page.locator("#lantern").get_attribute("aria-pressed") == "true"
-        assert page.evaluate("Skog.forest.lanternLight.intensity > 18 && Skog.forest.character.flame.visible")
+        assert page.evaluate("Skog.forest.lanternLight.intensity > 7 && Skog.forest.character.flame.visible")
         initial = page.evaluate("({...Skog.player,yaw:Skog.camera.yaw})")
         if is_touch:
             x, y = width * .23, height * .7

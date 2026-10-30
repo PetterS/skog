@@ -15,7 +15,7 @@ test('lantern fades out and back in while following the child', () => {
   const player = {x:2,z:3,heading:0,speed:0,walk:0};
   const advance = () => {for(let i=0;i<120;i++) child.update(i/60,1/60,player);};
   advance();
-  expect(child.lanternLight.intensity).toBeGreaterThan(18);
+  expect(child.lanternLight.intensity).toBeGreaterThan(7);
   expect(child.lanternLight.position.distanceTo(child.group.position)).toBeLessThan(2);
   expect(child.lanternLight.position.distanceTo(child.flame.getWorldPosition(new THREE.Vector3()))).toBeLessThan(.00001);
   expect(child.lanternLight.shadow.autoUpdate).toBe(true);
@@ -24,7 +24,7 @@ test('lantern fades out and back in while following the child', () => {
   expect(child.flame.visible).toBe(false);
   expect(child.lanternLight.shadow.autoUpdate).toBe(false);
   child.setLantern(true); advance();
-  expect(child.lanternLight.intensity).toBeGreaterThan(18);
+  expect(child.lanternLight.intensity).toBeGreaterThan(7);
   expect(child.flame.visible).toBe(true);
   expect(child.lanternLight.shadow.autoUpdate).toBe(true);
 });

@@ -104,6 +104,7 @@
   }
   try{
     world=new W.World();forest=new SkogForest(canvas,world);forest.resize();
+    forest.presence.onSound=(kind,position)=>{if(sound.context&&sound.enabled)sound.event(kind,sound.context.currentTime+.02,position);};
     rootExpose();$('#enter').disabled=false;$('#enter').textContent='Gå in i skogen';requestAnimationFrame(frame);
   }catch(error){console.error(error);$('#error').hidden=false;$('#title-screen').hidden=true;}
   function rootExpose(){window.Skog={player,camera,state,world,forest,sound,pause,resume,get input(){return {x:move.x,y:move.y,pointers:pointers.size,keys:[...keys],running:runHeld};}};}

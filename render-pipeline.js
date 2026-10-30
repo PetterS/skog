@@ -115,6 +115,93 @@
         inverseViewProjection:{value:this.inverseViewProjection},previousViewProjection:{value:this.previousViewProjection},
         inverseProjection:{value:camera.projectionMatrixInverse},texel:{value:new T.Vector2()},historyWeight:{value:0},
       });
+      // Participating media: low rolling mist and thin air, lit by the moon and
+      // the lantern. Both lights' shadow maps carve shafts out of the haze, so
+      // trunks between the child and the dark throw visible volumes.
+      this.volumeEnabled = true;this.atmosphere = null;
+      this.volumeHistory = [target(1,1,T.HalfFloatType),target(1,1,T.HalfFloatType)];this.volumeIndex=0;
+      this.volume = pass(`
+        precision highp float;
+        #include <packing>
+        uniform sampler2D depthMap, moonShadow, lanternShadow, volumeHistory;
+        uniform mat4 inverseViewProjection, moonMatrix, previousViewProjection;
+        uniform vec3 eye, lanternPosition, lanternColor, moonDirection, moonColor, ambientColor;
+        uniform vec2 lanternShadowRange, lanternShadowTexel;
+        uniform float time, frame, hasMoonShadow, hasLanternShadow, lanternRange, historyWeight, mistAmount;
+        varying vec2 vUv;
+        float ground(vec2 p){return sin(p.x*.059)*1.5+cos(p.y*.071)*1.1+sin(p.x*.17+p.y*.093)*.42+cos(p.x*.31-p.y*.21)*.12;}
+        float hash(vec3 p){p=fract(p*.3183099+.1);p*=17.0;return fract(p.x*p.y*p.z*(p.x+p.y+p.z));}
+        float noise(vec3 x){
+          vec3 i=floor(x),f=fract(x);f=f*f*(3.0-2.0*f);
+          return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+                     mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);
+        }
+        float density(vec3 p){
+          float h=p.y-ground(p.xz);
+          vec3 q=p*vec3(.13,.42,.13)+vec3(time*.045,-time*.01,time*.028);
+          float n=noise(q)*.62+noise(q*2.7+vec3(3.1,1.7,.4))*.38;
+          float mist=exp(-max(h,0.0)/1.15)*smoothstep(.32,.78,n);
+          float drift=smoothstep(.45,.8,noise(p*.045+vec3(time*.012,0.0,0.0)));
+          return .006+.008*drift+mist*mistAmount;
+        }
+        vec2 cubeToUV(vec3 v,float texelSizeY){
+          vec3 absV=abs(v);float scaleToCube=1.0/max(absV.x,max(absV.y,absV.z));
+          absV*=scaleToCube;v*=scaleToCube*(1.0-2.0*texelSizeY);vec2 planar=v.xy;
+          float almostOne=1.0-1.5*texelSizeY;
+          if(absV.z>=almostOne){if(v.z>0.0)planar.x=4.0-v.x;}
+          else if(absV.x>=almostOne){float s=sign(v.x);planar.x=v.z*s+2.0*s;}
+          else if(absV.y>=almostOne){float s=sign(v.y);planar.x=v.x+2.0*s+2.0;planar.y=v.z*s-2.0;}
+          return vec2(.125,.25)*planar+vec2(.375,.75);
+        }
+        float phase(float c,float g){float g2=g*g;return (1.0-g2)/(12.566*pow(1.0+g2-2.0*g*c,1.5));}
+        void main(){
+          float depth=texture2D(depthMap,vUv).r;
+          vec4 world=inverseViewProjection*vec4(vUv*2.0-1.0,depth*2.0-1.0,1.0);world/=world.w;
+          vec3 ray=world.xyz-eye;float sceneDistance=length(ray);ray/=sceneDistance;
+          float far=min(sceneDistance,42.0);
+          const int STEPS=14;float stepLength=far/float(STEPS);
+          float jitter=fract(52.9829189*fract(dot(gl_FragCoord.xy+frame*vec2(5.588,3.123),vec2(.06711056,.00583715))));
+          vec3 scatter=vec3(0.0);float transmittance=1.0;
+          float moonPhase=phase(dot(ray,-moonDirection),.55)*6.0+.35;
+          for(int i=0;i<STEPS;i++){
+            float t=(float(i)+jitter)*stepLength;vec3 p=eye+ray*t;
+            float sigma=density(p);
+            float moonLit=.18;
+            if(hasMoonShadow>.5){
+              vec4 c=moonMatrix*vec4(p,1.0);c.xyz/=c.w;
+              if(all(greaterThan(c.xy,vec2(0.0)))&&all(lessThan(c.xy,vec2(1.0))))moonLit=step(c.z,unpackRGBAToDepth(texture2D(moonShadow,c.xy))+.0005);
+            }
+            vec3 toLight=p-lanternPosition;float d=length(toLight);
+            float window=clamp(1.0-pow(d/lanternRange,4.0),0.0,1.0);
+            float lantern=window*window/max(pow(d,1.25),.09);
+            if(hasLanternShadow>.5&&lantern>.0005){
+              float dp=(d-lanternShadowRange.x)/(lanternShadowRange.y-lanternShadowRange.x)-.003;
+              lantern*=step(dp,unpackRGBAToDepth(texture2D(lanternShadow,cubeToUV(toLight/d,lanternShadowTexel.y))));
+            }
+            vec3 light=ambientColor+moonColor*moonLit*moonPhase+lanternColor*lantern*phase(dot(toLight/max(d,.001),-ray),.28)*12.566;
+            float absorb=exp(-sigma*stepLength);
+            scatter+=transmittance*light*(1.0-absorb);transmittance*=absorb;
+          }
+          // Temporal reprojection hides the per-pixel ray jitter.
+          vec4 current=vec4(scatter,transmittance);
+          if(historyWeight>0.0){
+            vec4 previous=previousViewProjection*vec4(world.xyz,1.0);
+            vec2 oldUV=previous.xy/previous.w*.5+.5;
+            if(previous.w>0.0&&all(greaterThan(oldUV,vec2(0.0)))&&all(lessThan(oldUV,vec2(1.0)))){
+              vec4 history=texture2D(volumeHistory,oldUV);
+              current=mix(current,history,historyWeight*step(abs(history.a-current.a),.25));
+            }
+          }
+          gl_FragColor=current;
+        }`,{
+        depthMap:{value:this.sceneTarget.depthTexture},moonShadow:{value:null},lanternShadow:{value:null},volumeHistory:{value:null},
+        inverseViewProjection:{value:new T.Matrix4()},previousViewProjection:{value:new T.Matrix4()},moonMatrix:{value:new T.Matrix4()},
+        eye:{value:new T.Vector3()},lanternPosition:{value:new T.Vector3()},lanternColor:{value:new T.Color()},
+        moonDirection:{value:new T.Vector3(0,1,0)},moonColor:{value:new T.Color()},ambientColor:{value:new T.Color()},
+        lanternShadowRange:{value:new T.Vector2(.03,26)},lanternShadowTexel:{value:new T.Vector2()},
+        time:{value:0},frame:{value:0},hasMoonShadow:{value:0},hasLanternShadow:{value:0},lanternRange:{value:26},historyWeight:{value:0},mistAmount:{value:.085},
+      });
+      this.volumeViewProjection=new T.Matrix4();this.volumePrevious=new T.Matrix4();this.volumeValid=false;this.volumeFrame=0;
       this.aoTarget = target(1, 1);
       this.bloomA = target(1, 1, T.HalfFloatType);
       this.bloomB = target(1, 1, T.HalfFloatType);
@@ -189,6 +276,10 @@
         uniform sampler2D bloomMap;
         uniform sampler2D depthMap;
         uniform sampler2D detailMap;
+        uniform sampler2D volumeMap;
+        uniform float volumeOn;
+        uniform vec2 volumeTexel, clipRange;
+        uniform vec2 aspect;
         uniform vec4 detailRect;
         uniform vec2 detailStep;
         uniform vec2 detailUvScale;
@@ -198,14 +289,37 @@
         #include <tonemapping_pars_fragment>
         varying vec2 vUv;
         float random(vec2 p) { return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+        vec4 fog;
+        float linearDepth(vec2 uv){float z=texture2D(depthMap,uv).r*2.0-1.0;return 2.0*clipRange.x*clipRange.y/(clipRange.y+clipRange.x-z*(clipRange.y-clipRange.x));}
+        // Joint bilateral upsampling: half-resolution haze must not bleed
+        // across the child's silhouette or along trunk edges.
+        vec4 sampleVolume(vec2 uv){
+          vec2 base=floor(uv/volumeTexel-.5);vec2 f=uv/volumeTexel-.5-base;
+          float center=linearDepth(uv);vec4 sum=vec4(0.0);float total=0.0;
+          for(int y=0;y<2;y++)for(int x=0;x<2;x++){
+            vec2 tuv=(base+vec2(float(x),float(y))+.5)*volumeTexel;
+            float w=(x==0?1.0-f.x:f.x)*(y==0?1.0-f.y:f.y);
+            w*=1.0/(.0001+abs(linearDepth(tuv)-center)/max(center,.1)*40.0);
+            sum+=texture2D(volumeMap,tuv)*w;total+=w;
+          }
+          return sum/max(total,1e-5);
+        }
         vec3 grade(vec3 color,float shade,vec3 bloom){
-          color=color*shade+bloom*.22;
+          color=(color*shade)*fog.a+fog.rgb+bloom*.3;
+          // Night grade: cold, desaturated shadows; firelight keeps its warmth.
           float light=dot(color,vec3(0.2126,0.7152,0.0722));
-          color*=mix(vec3(0.97,1.0,1.025),vec3(1.015,1.005,0.985),smoothstep(0.03,0.6,light));
+          float warmth=clamp((color.r-color.b)/max(light,.0005)*.5,0.0,1.0);
+          float night=1.0-smoothstep(.002,.09,light);
+          color=mix(color,vec3(light)*vec3(.82,.98,1.18),night*(1.0-warmth)*.55);
+          color=max(color-vec3(.0007,.0005,.0002),0.0);
           return sRGBTransferOETF(vec4(ACESFilmicToneMapping(color),1.0)).rgb;
         }
         void main() {
-          vec3 color=texture2D(colorMap,vUv).rgb;
+          vec2 centered=(vUv-.5)*aspect;float radial=dot(centered,centered);
+          // Faint lens fringing toward the edges of an otherwise clean frame.
+          vec2 fringe=(vUv-.5)*radial*.0035;
+          vec3 color=vec3(texture2D(colorMap,vUv+fringe).r,texture2D(colorMap,vUv).g,texture2D(colorMap,vUv-fringe).b);
+          fog=volumeOn>.5?sampleVolume(vUv):vec4(0.0,0.0,0.0,1.0);
           // Small bilateral AO resolve prevents silhouettes acquiring dark rims.
           float depth=texture2D(depthMap,vUv).r;
           float weight=1.0;
@@ -232,13 +346,17 @@
             vec2 edge=min(uv,1.0-uv)/detailStep;
             color=mix(color,detail/(detailSamples*detailSamples),smoothstep(0.0,8.0,min(edge.x,edge.y)));
           }
-          gl_FragColor=vec4(color,1.0);
-          gl_FragColor.rgb+=(random(gl_FragCoord.xy+fract(clock)*37.0)-0.5)/510.0;
+          color*=mix(1.0,.2,smoothstep(.12,.95,radial));
+          // Luminance-weighted film grain, strongest in the deep shadows.
+          float grain=random(gl_FragCoord.xy+fract(clock)*37.0)-0.5;
+          color+=grain*mix(.032,.012,smoothstep(0.0,.35,dot(color,vec3(.333))));
+          gl_FragColor=vec4(max(color,0.0),1.0);
         }`, {
         colorMap: {value: this.sceneTarget.texture}, aoMap: {value: this.aoTarget.texture},
         bloomMap: {value: this.bloomB.texture}, depthMap: {value: this.sceneTarget.depthTexture},
         detailMap:{value:this.detailTarget.texture},detailRect:{value:this.detailRect},detailStep:{value:this.detailStep},
         detailUvScale:{value:this.detailUvScale},detailSamples:{value:3},
+        volumeMap:{value:null},volumeOn:{value:0},volumeTexel:{value:new T.Vector2()},clipRange:{value:new T.Vector2(.1,180)},aspect:{value:new T.Vector2(1,1)},
         aoTexel: {value: new T.Vector2()}, clock: {value: 0}, toneMappingExposure: {value: renderer.toneMappingExposure},
       });
 
@@ -256,6 +374,11 @@
       this.temporal.uniforms.texel.value.set(1/width,1/height);
       this.antialias.uniforms.resolution.value.set(1/width,1/height);
       this.aoTarget.setSize(Math.ceil(width/2),Math.ceil(height/2));
+      // Mist is low frequency; half resolution keeps phones affordable.
+      const vw=Math.ceil(width/2),vh=Math.ceil(height/2);
+      this.volumeHistory.forEach(t=>t.setSize(vw,vh));this.volumeValid=false;
+      this.composite.uniforms.volumeTexel.value.set(1/vw,1/vh);
+      this.composite.uniforms.aspect.value.set(width>height?width/height:1,width>height?1:height/width);
       this.bloomA.setSize(Math.ceil(width/4),Math.ceil(height/4));
       this.bloomB.setSize(Math.ceil(width/4),Math.ceil(height/4));
       this.ao.uniforms.texel.value.set(1/width,1/height);
@@ -317,6 +440,39 @@
       this.detailStats.triangles=r.info.render.triangles-triangles;
       this.detailStats.pixels=this.detailTarget.width*this.detailTarget.height;
     }
+    // Lights are supplied by the forest: {moon, lantern, ambient, mist}.
+    renderVolume(time) {
+      const a=this.atmosphere,u=this.volume.uniforms,c=this.camera;
+      this.composite.uniforms.volumeOn.value=0;
+      if(!this.volumeEnabled||!a)return;
+      c.updateMatrixWorld();
+      this.volumeViewProjection.multiplyMatrices(c.projectionMatrix,c.matrixWorldInverse);
+      u.inverseViewProjection.value.multiplyMatrices(c.matrixWorld,c.projectionMatrixInverse);
+      u.eye.value.setFromMatrixPosition(c.matrixWorld);
+      const moon=a.moon,lantern=a.lantern;
+      u.moonDirection.value.subVectors(moon.position,moon.target.position).normalize();
+      u.moonColor.value.copy(moon.color).multiplyScalar(moon.intensity*a.moonScatter);
+      u.ambientColor.value.copy(a.ambient);
+      u.hasMoonShadow.value=moon.shadow.map?1:0;
+      if(moon.shadow.map){u.moonShadow.value=moon.shadow.map.texture;u.moonMatrix.value.copy(moon.shadow.matrix);}
+      u.lanternPosition.value.copy(lantern.position);
+      u.lanternColor.value.copy(lantern.color).multiplyScalar(lantern.intensity*a.lanternScatter);
+      u.lanternRange.value=lantern.distance||26;
+      const ls=lantern.shadow,usable=ls.map&&lantern.intensity>.01;
+      u.hasLanternShadow.value=usable?1:0;
+      if(usable){u.lanternShadow.value=ls.map.texture;u.lanternShadowRange.value.set(ls.camera.near,ls.camera.far);u.lanternShadowTexel.value.set(1/(ls.mapSize.x*4),1/(ls.mapSize.y*2));}
+      u.mistAmount.value=a.mist;u.time.value=time;u.frame.value=this.volumeFrame=(this.volumeFrame+1)%64;
+      const moved=!this.volumeValid||this.previousVolumeCamera?.distanceToSquared(u.eye.value)>1;
+      u.historyWeight.value=moved?0:.82;
+      u.previousViewProjection.value.copy(this.volumePrevious);
+      u.volumeHistory.value=this.volumeHistory[this.volumeIndex].texture;
+      const output=this.volumeHistory[1-this.volumeIndex];
+      this.draw(this.volume,output);
+      this.volumeIndex=1-this.volumeIndex;this.volumeValid=true;
+      this.previousVolumeCamera=(this.previousVolumeCamera||new T.Vector3()).copy(u.eye.value);
+      this.volumePrevious.copy(this.volumeViewProjection);
+      this.composite.uniforms.volumeMap.value=output.texture;this.composite.uniforms.clipRange.value.set(c.near,c.far);this.composite.uniforms.volumeOn.value=1;
+    }
     render(time,motionSpeed=0) {
       const r=this.renderer,c=this.camera;
       this.shadowStats.calls=0;this.shadowStats.triangles=0;
@@ -337,6 +493,7 @@
       this.renderDetail();
       this.ao.uniforms.focalLength.value=this.camera.projectionMatrix.elements[5]*0.5;
       this.draw(this.ao,this.aoTarget);
+      this.renderVolume(time);
       this.bloom.uniforms.source.value=this.sceneTarget.texture;
       this.bloom.uniforms.direction.value.set(1/this.bloomA.width,0);
       this.bloom.uniforms.threshold.value=1.05;

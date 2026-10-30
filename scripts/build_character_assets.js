@@ -23,9 +23,9 @@ const meshes=base.meshes.map((mesh,mi)=>{
   for(let i=0;i<indices.length;i+=3){const tri=indices.slice(i,i+3);if(mi===2&&tri.some(v=>pos[v*3+1]<1.545))continue;
     for(const v of tri){if(!remap.has(v)){
       remap.set(v,out.length/3);const x=pos[v*3],y=pos[v*3+1],z=pos[v*3+2];
-      // Shorter lower face, rounder cheeks, enlarged cranium; no beard.
-      const lower=Math.max(0,Math.min(1,(1.69-y)/.13));
-      out.push(round(x*1.78*(1-.15*lower)),round((y-1.68)*1.52+.025*lower),round((z+.015)*1.65*(1-.12*lower)));
+      // Unscaled head space (origin between the ears). character.js reshapes
+      // it into the child's proportions at load time; no beard is included.
+      out.push(round(x),round(y-1.68),round(z+.015));
       tex.push(uv[v*2],uv[v*2+1]);
     }idx.push(remap.get(v));}
   }return {name:mesh.name,position:out,uv:tex.map(round),index:idx};
