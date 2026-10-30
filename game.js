@@ -6,6 +6,12 @@
   const state={started:false,paused:false,time:0,frames:0,quality:Math.min(devicePixelRatio,1.6)};
   const keys=new Set(),pointers=new Map(),move={x:0,y:0};let forest,world,runHeld=false,touchMode=matchMedia('(pointer:coarse)').matches;
   const sound=new SkogSound();try{sound.enabled=localStorage.getItem('skog.sound')!=='off';}catch(_){}
+  let hintTimer,edgeLatched=false,nextEdgeNotice=0;
+  function showHint(text,duration=4000,edge=false){
+    clearTimeout(hintTimer);const hint=$('#hint');hint.textContent=text;
+    hint.classList.toggle('edge-notice',edge);hint.classList.remove('faded');
+    hintTimer=setTimeout(()=>hint.classList.add('faded'),duration);
+  }
   function soundUI(){$('#sound').setAttribute('aria-pressed',String(sound.enabled));$('#sound').setAttribute('aria-label',sound.enabled?'Stäng av ljud':'Slå på ljud');}
   function setTouch(value){touchMode=value;document.body.classList.toggle('touch',value);$('#touch-controls').setAttribute('aria-hidden',String(!value));$('#title-controls').textContent=value?'Dra till vänster för att gå · dra till höger för att se dig omkring':'WASD / piltangenter · dra för att se dig omkring';}
   setTouch(touchMode);soundUI();
@@ -13,12 +19,12 @@
   function pause(){if(!state.started||state.paused)return;state.paused=true;resetInput();sound.release();$('#pause-dialog').showModal();}
   function resume(){if(!state.started)return;state.paused=false;resetInput();$('#pause-dialog').close();sound.unlock();canvas.focus({preventScroll:true});}
   function toggleSound(){sound.setEnabled(!sound.enabled);soundUI();try{localStorage.setItem('skog.sound',sound.enabled?'on':'off');}catch(_){}}
-  function start(){if(!forest)return;state.started=true;state.paused=false;$('#title-screen').hidden=true;$('#hud').hidden=false;sound.unlock();canvas.tabIndex=0;canvas.focus({preventScroll:true});setTimeout(()=>$('#hint').classList.add('faded'),8500);}
+  function start(){if(!forest)return;state.started=true;state.paused=false;$('#title-screen').hidden=true;$('#hud').hidden=false;sound.unlock();canvas.tabIndex=0;canvas.focus({preventScroll:true});showHint('Följ stigen. Eller låt bli.',8500);}
   $('#enter').addEventListener('click',start);$('#enter').addEventListener('touchend',()=>sound.unlock(),{passive:true});
   $('#pause').addEventListener('click',pause);$('#resume').addEventListener('click',resume);
   $('#pause-dialog').addEventListener('cancel',e=>{e.preventDefault();resume();});
   $('#sound').addEventListener('click',toggleSound);
-  $('#restart').addEventListener('click',()=>{Object.assign(player,{x:0,z:7,heading:Math.PI,speed:0,motionSpeed:0,walk:0});Object.assign(camera,{yaw:.08,pitch:.27,distance:6.6,actualDistance:6.6});resume();});
+  $('#restart').addEventListener('click',()=>{Object.assign(player,{x:0,z:7,heading:Math.PI,speed:0,motionSpeed:0,walk:0});Object.assign(camera,{yaw:.08,pitch:.27,distance:6.6,actualDistance:6.6});edgeLatched=false;nextEdgeNotice=0;clearTimeout(hintTimer);$('#hint').classList.add('faded');resume();});
   function live(){return state.started&&!state.paused&&!document.hidden;}
   window.addEventListener('keydown',e=>{
     if(e.code==='Escape'){e.preventDefault();if(state.paused)resume();else pause();return;}
@@ -79,6 +85,11 @@
       if(length>.01){const vx=x*Math.cos(camera.yaw)+z*Math.sin(camera.yaw),vz=-x*Math.sin(camera.yaw)+z*Math.cos(camera.yaw);
         const angle=Math.atan2(vx,vz),delta=Math.atan2(Math.sin(angle-player.heading),Math.cos(angle-player.heading));player.heading+=delta*(1-Math.exp(-dt*12));
         const p=world.move(player.x,player.z,vx/Math.min(length,1)*player.speed*dt,vz/Math.min(length,1)*player.speed*dt);
+        if(p.edge&&!edgeLatched){
+          if(state.time>=nextEdgeNotice){showHint('Du kan inte gå längre åt det hållet.',4000,true);nextEdgeNotice=state.time+6;}
+          edgeLatched=true;
+        }
+        if(Math.hypot(p.x,p.z)<world.radius-.6)edgeLatched=false;
         const moved=Math.hypot(p.x-player.x,p.z-player.z);player.x=p.x;player.z=p.z;player.motionSpeed=moved/Math.max(dt,.001);player.walk+=moved*3.5;if(moved>.001)sound.footstep(player.motionSpeed,player);
       }
     }else{player.speed=0;player.motionSpeed=0;}

@@ -16,3 +16,5 @@ dialog{color:#e4e5d5;background:#132123f5;border:1px solid #92a99d3b;border-radi
 @media(max-height:500px){.screen{align-items:center;padding:5vw}h1{font-size:72px}.title-card>p{margin-bottom:20px}.title-note{margin-top:12px}.joystick{width:88px;height:88px;left:calc(18% - 44px);bottom:20px}#stick{left:27px;top:27px}.touch-label{bottom:92px}.touch .hint{bottom:16px}dialog{padding:20px}h2{margin:8px 0 15px;font-size:27px}.instructions p{margin:8px 0;padding-bottom:5px}.quiet{display:none}dialog .primary{margin-top:15px}.text-button{margin-top:8px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 .touch .joystick.active #stick{left:35px;top:35px}
+.hint.edge-notice{max-width:calc(100vw - 40px);white-space:normal;text-align:center;color:#e3e4d1;line-height:1.5;letter-spacing:.04em}
+.touch .hint.edge-notice{bottom:max(150px,calc(env(safe-area-inset-bottom) + 130px));font-size:11px}

@@ -41,7 +41,7 @@
   }
   class World {
     constructor(seed = 31010) {
-      this.seed = seed; this.trees = []; this.rocks = []; this.colliders = []; this.grid = new Map();
+      this.seed = seed; this.radius = 78; this.trees = []; this.rocks = []; this.colliders = []; this.grid = new Map();
       const rng = random(seed);
       for (let i = 0; i < 1250; i++) {
         const a = rng()*TAU, d = Math.sqrt(rng())*103;
@@ -74,6 +74,7 @@
       return found;
     }
     move(x,z,dx,dz,r=.28) {
+      let edge=false;
       const steps=Math.max(1,Math.ceil(Math.hypot(dx,dz)/.18));
       for(let step=0;step<steps;step++) {
         x+=dx/steps; z+=dz/steps;
@@ -81,9 +82,9 @@
           let a=x-c.x,b=z-c.z,d=Math.hypot(a,b),min=r+c.r;
           if(d<min){if(d<.00001){a=1;b=0;d=1;x=c.x+min;z=c.z;}else{x+=a/d*(min-d);z+=b/d*(min-d);}}
         }
-        const distance=Math.hypot(x,z);if(distance>78){x*=78/distance;z*=78/distance;}
+        const distance=Math.hypot(x,z);if(distance>this.radius){x*=this.radius/distance;z*=this.radius/distance;edge=true;}
       }
-      return {x,z};
+      return edge ? {x,z,edge:true} : {x,z};
     }
     cameraDistance(target, desired, radius=.22) {
       const dx=desired.x-target.x,dy=desired.y-target.y,dz=desired.z-target.z;
