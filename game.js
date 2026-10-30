@@ -1,7 +1,7 @@
 (function(){
   'use strict';
   const $=s=>document.querySelector(s),canvas=$('#forest'),W=SkogWorld;
-  const player={x:0,z:7,heading:Math.PI,speed:0,walk:0};
+  const player={x:0,z:7,heading:Math.PI,speed:0,motionSpeed:0,walk:0};
   const camera={yaw:.08,pitch:.27,distance:6.6};
   const state={started:false,paused:false,time:0,frames:0,quality:Math.min(devicePixelRatio,1.6)};
   const keys=new Set(),pointers=new Map(),move={x:0,y:0};let forest,world,runHeld=false,touchMode=matchMedia('(pointer:coarse)').matches;
@@ -18,7 +18,7 @@
   $('#pause').addEventListener('click',pause);$('#resume').addEventListener('click',resume);
   $('#pause-dialog').addEventListener('cancel',e=>{e.preventDefault();resume();});
   $('#sound').addEventListener('click',toggleSound);
-  $('#restart').addEventListener('click',()=>{Object.assign(player,{x:0,z:7,heading:Math.PI,speed:0,walk:0});Object.assign(camera,{yaw:.08,pitch:.27,distance:6.6,actualDistance:6.6});resume();});
+  $('#restart').addEventListener('click',()=>{Object.assign(player,{x:0,z:7,heading:Math.PI,speed:0,motionSpeed:0,walk:0});Object.assign(camera,{yaw:.08,pitch:.27,distance:6.6,actualDistance:6.6});resume();});
   function live(){return state.started&&!state.paused&&!document.hidden;}
   window.addEventListener('keydown',e=>{
     if(e.code==='Escape'){e.preventDefault();if(state.paused)resume();else pause();return;}
@@ -45,7 +45,7 @@
       const dx=e.clientX-p.originX,dy=e.clientY-p.originY,length=Math.hypot(dx,dy),limit=43;
       const strength=W.clamp((length-5)/(limit-5),0,1);move.x=length?dx/length*strength:0;move.y=length?dy/length*strength:0;
       $('#stick').style.transform=`translate(${move.x*34}px,${move.y*34}px)`;
-    }else{camera.yaw-=(e.clientX-p.x)*.005;camera.pitch=W.clamp(camera.pitch+(e.clientY-p.y)*.003,.08,.85);}
+    }else{camera.yaw-=(e.clientX-p.x)*.005;camera.pitch=W.clamp(camera.pitch+(e.clientY-p.y)*.003,-.10,.85);}
     p.x=e.clientX;p.y=e.clientY;
   }
   function pointEnd(e){
@@ -72,16 +72,17 @@
       let x=move.x+(keys.has('KeyD')||keys.has('ArrowRight')?1:0)-(keys.has('KeyA')||keys.has('ArrowLeft')?1:0);
       let z=move.y+(keys.has('KeyS')||keys.has('ArrowDown')?1:0)-(keys.has('KeyW')||keys.has('ArrowUp')?1:0);
       const length=Math.hypot(x,z);if(length>1){x/=length;z/=length;}
-      const running=runHeld||keys.has('ShiftLeft')||keys.has('ShiftRight');const desiredSpeed=(running?4.8:2.55)*Math.min(length,1);
+      const running=runHeld||keys.has('ShiftLeft')||keys.has('ShiftRight');const desiredSpeed=(running?3.5:1.85)*Math.min(length,1);
       player.speed+=(desiredSpeed-player.speed)*(1-Math.exp(-dt*12));if(length<.01&&player.speed<.02)player.speed=0;
       if(keys.has('KeyQ'))camera.yaw+=dt*1.6;if(keys.has('KeyE'))camera.yaw-=dt*1.6;
+      player.motionSpeed=0;
       if(length>.01){const vx=x*Math.cos(camera.yaw)+z*Math.sin(camera.yaw),vz=-x*Math.sin(camera.yaw)+z*Math.cos(camera.yaw);
         const angle=Math.atan2(vx,vz),delta=Math.atan2(Math.sin(angle-player.heading),Math.cos(angle-player.heading));player.heading+=delta*(1-Math.exp(-dt*12));
         const p=world.move(player.x,player.z,vx/Math.min(length,1)*player.speed*dt,vz/Math.min(length,1)*player.speed*dt);
-        const moved=Math.hypot(p.x-player.x,p.z-player.z);player.x=p.x;player.z=p.z;player.walk+=moved*7.2;if(moved>.001)sound.footstep(player.speed);
+        const moved=Math.hypot(p.x-player.x,p.z-player.z);player.x=p.x;player.z=p.z;player.motionSpeed=moved/Math.max(dt,.001);player.walk+=moved*3.5;if(moved>.001)sound.footstep(player.motionSpeed,player);
       }
-    }else{player.speed=0;}
-    sound.update(state.time);forest.update(state.time,dt,player,camera);
+    }else{player.speed=0;player.motionSpeed=0;}
+    sound.update(state.time,player,camera);forest.update(state.time,dt,player,camera);
     // Render resolution adapts, while controls and world geometry stay stable.
     if(state.frames>90&&elapsed<.2){frameCount++;frameSum+=elapsed;if(frameCount===90){const average=frameSum/frameCount;if(average>.031)slowFrames++;else slowFrames=0;if(slowFrames>=2&&state.quality>.8){state.quality=Math.max(.8,state.quality-.2);forest.setQuality(state.quality);slowFrames=0;}frameCount=0;frameSum=0;}}
   }

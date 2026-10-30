@@ -1,0 +1,27 @@
+Skog environment surface textures
+
+The six JPEG texture maps embedded in environment-textures.js are unmodified
+1K-resolution Poly Haven assets by Rob Tuytel, released under CC0 1.0.
+
+Mossy Rock — diffuse colour and OpenGL normal
+https://polyhaven.com/a/mossy_rock
+https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/mossy_rock/mossy_rock_diff_1k.jpg
+https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/mossy_rock/mossy_rock_nor_gl_1k.jpg
+
+Bark Brown 02 — diffuse colour and OpenGL normal
+https://polyhaven.com/a/bark_brown_02
+https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_02/bark_brown_02_diff_1k.jpg
+https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_brown_02/bark_brown_02_nor_gl_1k.jpg
+
+Forest Ground 01 — diffuse colour and OpenGL normal
+https://polyhaven.com/a/forrest_ground_01
+https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_ground_01/forrest_ground_01_diff_1k.jpg
+https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/forrest_ground_01/forrest_ground_01_nor_gl_1k.jpg
+
+License: https://creativecommons.org/publicdomain/zero/1.0/
+Poly Haven asset license: https://polyhaven.com/license
+Retrieved 2026-10-30. Original model geometry and foliage textures are authored
+for Skog; no downloaded model or foliage artwork is used.
+
+The base64 transport preserves the original image files exactly and lets WebGL
+use them when index.html is opened directly via file:// without a server.

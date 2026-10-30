@@ -1,0 +1,58 @@
+Skog woodland sound recordings
+All source recordings are CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+License and authors verified on the original Freesound sound pages on 2026-10-30.
+The publicly served HQ MP3 previews were downloaded, trimmed, filtered and levelled.
+Local MP3 data is embedded in forest-audio.js for offline file:// playback.
+No network requests occur while playing. The original recordings are not needed at runtime.
+
+canopy: Forest, white noise / distant roar of high tree tops swaying in the wind.wav
+Author: Anya_Media
+Source: https://freesound.org/people/Anya_Media/sounds/523390/
+Download: https://cdn.freesound.org/previews/523/523390_2010973-hq.mp3
+License: CC0 1.0
+
+leaves: Forest, close up of trees rustling in the wind.wav
+Author: Anya_Media
+Source: https://freesound.org/people/Anya_Media/sounds/523389/
+Download: https://cdn.freesound.org/previews/523/523389_2010973-hq.mp3
+License: CC0 1.0
+
+track: Single pair of footsteps walking down a forest track
+Author: Anya_Media
+Source: https://freesound.org/people/Anya_Media/sounds/523384/
+Download: https://cdn.freesound.org/previews/523/523384_2010973-hq.mp3
+License: CC0 1.0
+
+undergrowth: One person's footsteps walking through the forest undergrowth.wav
+Author: Anya_Media
+Source: https://freesound.org/people/Anya_Media/sounds/523385/
+Download: https://cdn.freesound.org/previews/523/523385_2010973-hq.mp3
+License: CC0 1.0
+
+owl: Great horned owls dialog 09/20/2017
+Author: PianoFarm
+Source: https://freesound.org/people/PianoFarm/sounds/457749/
+Download: https://cdn.freesound.org/previews/457/457749_9556718-hq.mp3
+License: CC0 1.0
+
+Edits (seconds in the source):
+canopy: canopy, start 1.000, duration 26.000
+leaves: leaves, start 24.000, duration 31.000
+owl: owl, start 6.000, duration 19.000
+track0: track, start 6.585, duration 0.340
+track1: track, start 13.075, duration 0.340
+track2: track, start 23.795, duration 0.340
+track3: track, start 34.845, duration 0.340
+track4: track, start 36.125, duration 0.340
+track5: track, start 37.385, duration 0.340
+undergrowth0: undergrowth, start 3.795, duration 0.340
+undergrowth1: undergrowth, start 18.475, duration 0.340
+undergrowth2: undergrowth, start 24.525, duration 0.340
+undergrowth3: undergrowth, start 25.935, duration 0.340
+undergrowth4: undergrowth, start 32.765, duration 0.340
+undergrowth5: undergrowth, start 38.575, duration 0.340
+
+Skog sound.js adds its own restrained wind body, creaking timber, branch snaps,
+lantern/clothing foley, positional attenuation, surface-aware footfall selection,
+early reflections and stereo diffusion. The owl recording is a great horned owl,
+used as fictional forest ambience; this is not a Swedish species simulation.
